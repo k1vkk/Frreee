@@ -1,0 +1,6 @@
+{
+  "name": "NEXORA VPN",
+  "description": "Professional WireGuard VPN client for Android with Node.js & PostgreSQL backend, live tunnel metrics, speed diagnostics, Play Billing subscriptions, and bilingual Arabic/English UI.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

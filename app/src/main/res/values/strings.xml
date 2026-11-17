@@ -1,0 +1,192 @@
+<resources>
+    <string name="app_name">NEXORA VPN</string>
+    <string name="brand_name">NEXORA</string>
+    <string name="brand_tag">VPN</string>
+    <string name="brand_protocol_badge">WIREGUARD KERNEL</string>
+
+    <!-- Navigation -->
+    <string name="nav_home">Home</string>
+    <string name="nav_servers">Servers</string>
+    <string name="nav_speed_test">Speed Test</string>
+    <string name="nav_subscriptions">Plans</string>
+    <string name="nav_settings">Settings</string>
+    <string name="nav_profile">Account</string>
+
+    <!-- Home Screen -->
+    <string name="status_disconnected">DISCONNECTED</string>
+    <string name="status_connecting">ESTABLISHING TUNNEL…</string>
+    <string name="status_reconnecting">AUTO-RECONNECTING…</string>
+    <string name="status_connected">ENCRYPTED &amp; PROTECTED</string>
+    <string name="status_disconnecting">CLOSING TUNNEL…</string>
+    <string name="status_error">CONNECTION FAILED</string>
+
+    <string name="action_best_server">Best Server (Lowest Ping)</string>
+    <string name="label_dns_protection">DNS Leak Protection</string>
+    <string name="label_dns_secured">Secured: %1$s</string>
+    <string name="label_dual_stack">IPv4 + IPv6 Dual Stack</string>
+    <string name="label_kill_switch_on">Kill Switch &amp; Auto-Reconnect Armed</string>
+    <string name="label_node_online">ONLINE • %1$d%% load</string>
+    <string name="toggle_kill_switch">Kill Switch (Protect on tunnel drop)</string>
+    <string name="toggle_auto_reconnect">Auto-Reconnect on network switch</string>
+    <string name="toggle_dns_leak_protection">Strict DNS Leak Protection (IPv4 &amp; IPv6)</string>
+    <string name="error_no_reachable_server">No reachable WireGuard VPS server responded to Ping.</string>
+
+    <string name="action_connect">TAP TO CONNECT</string>
+    <string name="action_disconnect">TAP TO DISCONNECT</string>
+    <string name="action_connecting">NEGOTIATING KEYS…</string>
+    <string name="action_cancel">CANCEL</string>
+
+    <string name="label_ip_before">Original IP</string>
+    <string name="label_ip_after">Tunnel IP</string>
+    <string name="label_ip_checking">Checking…</string>
+    <string name="label_ip_unavailable">Unavailable</string>
+    <string name="label_ip_not_connected">Not Tunneled</string>
+
+    <string name="label_download">Download</string>
+    <string name="label_upload">Upload</string>
+    <string name="label_ping">Ping</string>
+    <string name="label_duration">Duration</string>
+    <string name="label_data_usage">Data Used</string>
+    <string name="label_total_data">Total Used</string>
+    <string name="label_selected_server">Active Server</string>
+    <string name="label_no_server_selected">No WireGuard profile selected</string>
+    <string name="label_change_server">Switch</string>
+
+    <string name="setup_required_title">Backend or WireGuard Profile Required</string>
+    <string name="setup_required_body">Connect your Node.js + PostgreSQL API endpoint in Settings, or import a real WireGuard .conf file to establish an encrypted tunnel.</string>
+    <string name="action_configure_api">Configure API</string>
+    <string name="action_import_conf">Import .conf</string>
+    <string name="action_refresh_ip">Refresh IP</string>
+
+    <!-- Servers Screen -->
+    <string name="servers_title">Global Nodes</string>
+    <string name="servers_search_hint">Search country, city, or host…</string>
+    <string name="filter_all">All</string>
+    <string name="filter_favorites">Favorites</string>
+    <string name="filter_imported">Imported .conf</string>
+    <string name="filter_backend">Cloud API</string>
+    <string name="action_sync_servers">Sync API</string>
+    <string name="action_ping_all">Measure Ping</string>
+    <string name="action_add_manual">Manual Config</string>
+    <string name="servers_empty_title">No WireGuard Nodes Loaded</string>
+    <string name="servers_empty_body">Sync servers from your Node.js + PostgreSQL backend, import a WireGuard .conf file, or enter tunnel keys manually.</string>
+    <string name="label_pro_tier">PRO</string>
+    <string name="label_free_tier">FREE</string>
+    <string name="label_local_conf">CONF</string>
+    <string name="label_latency_ms">%1$d ms</string>
+    <string name="label_latency_timeout">Timeout</string>
+    <string name="label_latency_untested">Untested</string>
+    <string name="action_connect_node">Connect</string>
+    <string name="action_connected_node">Active</string>
+    <string name="action_delete_node">Remove</string>
+
+    <!-- Manual Config Dialog -->
+    <string name="manual_config_title">Add WireGuard Tunnel</string>
+    <string name="field_profile_name">Profile Name</string>
+    <string name="field_country_name">Country / Region</string>
+    <string name="field_endpoint">Server Endpoint (host:port)</string>
+    <string name="field_server_pubkey">Server Public Key (Base64)</string>
+    <string name="field_interface_address">Interface Address (e.g. 10.8.0.2/32)</string>
+    <string name="field_dns">DNS Servers (e.g. 1.1.1.1)</string>
+    <string name="field_allowed_ips">Allowed IPs (e.g. 0.0.0.0/0, ::/0)</string>
+    <string name="action_save">Save</string>
+
+    <!-- Speed Test Screen -->
+    <string name="speed_test_title">Network Diagnostics</string>
+    <string name="speed_test_subtitle">Live TCP latency, jitter, and HTTP throughput measurement</string>
+    <string name="phase_idle">READY</string>
+    <string name="phase_ping">MEASURING LATENCY</string>
+    <string name="phase_download">TESTING DOWNLOAD</string>
+    <string name="phase_upload">TESTING UPLOAD</string>
+    <string name="phase_complete">DIAGNOSTIC COMPLETE</string>
+    <string name="phase_error">DIAGNOSTIC FAILED</string>
+    <string name="action_start_test">Start Speed Test</string>
+    <string name="action_stop_test">Stop Test</string>
+    <string name="label_jitter">Jitter</string>
+    <string name="label_mbps">Mbps</string>
+    <string name="label_history">Recent Measurements</string>
+    <string name="history_empty">Run a diagnostic to record real throughput and latency metrics.</string>
+    <string name="label_vpn_on">VPN ON</string>
+    <string name="label_vpn_off">DIRECT</string>
+
+    <!-- Subscriptions Screen -->
+    <string name="plans_title">NEXORA Pro Plans</string>
+    <string name="plans_subtitle">Managed via Google Play Billing &amp; synced with PostgreSQL</string>
+    <string name="current_plan_label">Active Entitlement</string>
+    <string name="plan_free_title">Free Tier</string>
+    <string name="plan_pro_monthly_title">NEXORA Pro Monthly</string>
+    <string name="plan_pro_annual_title">NEXORA Pro Annual</string>
+    <string name="plan_pro_monthly_desc">High-speed WireGuard nodes, multi-device key provisioning, and priority routing.</string>
+    <string name="plan_pro_annual_desc">Full annual Pro protection with maximum savings and up to 5 active devices.</string>
+    <string name="action_subscribe">Subscribe</string>
+    <string name="action_restore_purchases">Restore Purchases</string>
+    <string name="billing_status_ready">Google Play Billing Connected</string>
+    <string name="billing_status_unavailable">Google Play Billing unavailable on this device or build. Configure product IDs in Play Console to enable live checkout.</string>
+    <string name="billing_product_unconfigured">Product not published in Play Console yet (ID: %1$s)</string>
+    <string name="feature_wireguard">WireGuard Kernel Encryption</string>
+    <string name="feature_no_logs">Strict Zero-Telemetry Architecture</string>
+    <string name="feature_split_tunnel">Per-App Split Tunneling</string>
+    <string name="feature_multi_device">Multi-Device Key Sync</string>
+
+    <!-- Settings Screen -->
+    <string name="settings_title">Tunnel &amp; System Settings</string>
+    <string name="section_backend">Node.js + PostgreSQL Backend</string>
+    <string name="field_api_url">API Base URL</string>
+    <string name="hint_api_url">https://vpn-api.yourdomain.com</string>
+    <string name="action_save_test_api">Save &amp; Verify Health</string>
+    <string name="api_status_ok">Connected to Backend (%1$s)</string>
+    <string name="api_status_error">Backend unreachable: %1$s</string>
+    <string name="api_status_not_set">No backend URL configured</string>
+
+    <string name="section_language">Language &amp; Layout</string>
+    <string name="lang_system">Follow System</string>
+    <string name="lang_arabic">العربية (RTL)</string>
+    <string name="lang_english">English (LTR)</string>
+
+    <string name="section_wireguard">WireGuard Protocol</string>
+    <string name="field_custom_dns">Custom DNS</string>
+    <string name="field_mtu">Tunnel MTU</string>
+    <string name="toggle_auto_connect">Auto-connect on launch</string>
+    <string name="setting_split_tunneling">Split Tunneling (Excluded Apps)</string>
+    <string name="setting_split_tunneling_desc">%1$d apps excluded from VPN tunnel</string>
+    <string name="setting_always_on_vpn">System Always-On &amp; Kill Switch</string>
+    <string name="setting_always_on_vpn_desc">Open Android VPN Settings to enforce Block Connections Without VPN</string>
+    <string name="split_tunnel_dialog_title">Exclude Apps from VPN</string>
+    <string name="action_done">Done</string>
+
+    <!-- Profile / Account Screen -->
+    <string name="profile_title">Account &amp; Keys</string>
+    <string name="tab_sign_in">Sign In</string>
+    <string name="tab_register">Create Account</string>
+    <string name="field_email">Email Address</string>
+    <string name="field_password">Password (min 8 chars)</string>
+    <string name="field_full_name">Display Name</string>
+    <string name="action_sign_in">Sign In with JWT</string>
+    <string name="action_register">Register Account</string>
+    <string name="action_sign_out">Sign Out</string>
+    <string name="label_wireguard_pubkey">Device WireGuard Public Key (Curve25519)</string>
+    <string name="action_copy_key">Copy Key</string>
+    <string name="action_rotate_key">Rotate Keypair</string>
+    <string name="key_copied_msg">Public key copied to clipboard</string>
+    <string name="label_active_sessions">Active PostgreSQL Sessions</string>
+    <string name="action_revoke_session">Revoke</string>
+    <string name="sessions_empty">No active remote sessions synced.</string>
+    <string name="action_forgot_password">Forgot Password?</string>
+    <string name="reset_password_title">Reset Password</string>
+    <string name="action_send_reset_code">Send Verification Code</string>
+    <string name="field_reset_code">6-Digit Verification Code</string>
+    <string name="field_new_password">New Password (min 8 chars)</string>
+    <string name="action_confirm_reset">Update Password</string>
+    <string name="action_back_to_signin">Back to Sign In</string>
+    <string name="setting_battery_optimization">Battery &amp; Tunnel Stability</string>
+    <string name="setting_battery_optimized">Adaptive power mode active (Recommended: Exempt NEXORA in Android Battery Settings for uninterrupted Always-On VPN)</string>
+    <string name="setting_battery_unrestricted">Unrestricted background tunnel enabled (Optimal stability)</string>
+
+    <!-- Errors & Notifications -->
+    <string name="vpn_notification_channel_name">NEXORA VPN Tunnel</string>
+    <string name="vpn_notification_channel_desc">Persistent WireGuard connection status and traffic metrics</string>
+    <string name="vpn_notification_connected">Connected to %1$s</string>
+    <string name="vpn_notification_stats">↓ %1$s  •  ↑ %2$s  •  %3$s</string>
+    <string name="error_vpn_permission_denied">VPN permission was not granted by the system.</string>
+    <string name="error_invalid_url">Please enter a valid production https:// URL.</string>
+</resources>

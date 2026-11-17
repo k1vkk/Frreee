@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: nexora-vpn-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 4000
+      - key: TRUST_PROXY
+        value: "true"
+      - key: ENFORCE_HTTPS
+        value: "true"
+      - key: DATABASE_SSL
+        value: "true"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: nexora-vpn-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ADMIN_API_KEY
+        generateValue: true
+      - key: NODE_AGENT_SECRET
+        generateValue: true
+      - key: GOOGLE_PLAY_PACKAGE_NAME
+        value: com.aistudio.nexoravpn.nxrk7q
+
+databases:
+  - name: nexora-vpn-db
+    databaseName: nexora_vpn
+    user: nexora
+    plan: starter

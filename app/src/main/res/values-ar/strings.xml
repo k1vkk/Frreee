@@ -1,0 +1,192 @@
+<resources>
+    <string name="app_name">NEXORA VPN</string>
+    <string name="brand_name">NEXORA</string>
+    <string name="brand_tag">VPN</string>
+    <string name="brand_protocol_badge">نواة WIREGUARD</string>
+
+    <!-- Navigation -->
+    <string name="nav_home">الرئيسية</string>
+    <string name="nav_servers">السيرفرات</string>
+    <string name="nav_speed_test">اختبار السرعة</string>
+    <string name="nav_subscriptions">الاشتراكات</string>
+    <string name="nav_settings">الإعدادات</string>
+    <string name="nav_profile">الحساب</string>
+
+    <!-- Home Screen -->
+    <string name="status_disconnected">غير متصل</string>
+    <string name="status_connecting">جاري إنشاء النفق…</string>
+    <string name="status_reconnecting">إعادة اتصال تلقائية…</string>
+    <string name="status_connected">متصل ومشفر بالكامل</string>
+    <string name="status_disconnecting">جاري إغلاق النفق…</string>
+    <string name="status_error">تعذر الاتصال</string>
+
+    <string name="action_best_server">أفضل سيرفر (أقل Ping)</string>
+    <string name="label_dns_protection">حماية DNS من التسرب</string>
+    <string name="label_dns_secured">محمي: %1$s</string>
+    <string name="label_dual_stack">دعم IPv4 و IPv6 المزدوج</string>
+    <string name="label_kill_switch_on">Kill Switch وإعادة الاتصال التلقائي مفعّلان</string>
+    <string name="label_node_online">متصل • حمل %1$d%%</string>
+    <string name="toggle_kill_switch">مفتاح الإيقاف Kill Switch</string>
+    <string name="toggle_auto_reconnect">إعادة الاتصال تلقائياً عند تغير الشبكة</string>
+    <string name="toggle_dns_leak_protection">حماية صارمة لتسرب DNS (IPv4 و IPv6)</string>
+    <string name="error_no_reachable_server">لم يستجب أي سيرفر WireGuard متاح لفحص Ping.</string>
+
+    <string name="action_connect">اضغط للاتصال</string>
+    <string name="action_disconnect">اضغط لقطع الاتصال</string>
+    <string name="action_connecting">جاري تبادل المفاتيح…</string>
+    <string name="action_cancel">إلغاء</string>
+
+    <string name="label_ip_before">عنوان IP قبل الاتصال</string>
+    <string name="label_ip_after">عنوان IP بعد الاتصال</string>
+    <string name="label_ip_checking">جاري الفحص…</string>
+    <string name="label_ip_unavailable">غير متاح</string>
+    <string name="label_ip_not_connected">خارج النفق</string>
+
+    <string name="label_download">التنزيل</string>
+    <string name="label_upload">الرفع</string>
+    <string name="label_ping">Ping</string>
+    <string name="label_duration">مدة الاتصال</string>
+    <string name="label_data_usage">استهلاك الجلسة</string>
+    <string name="label_total_data">إجمالي الاستهلاك</string>
+    <string name="label_selected_server">السيرفر المتصل به</string>
+    <string name="label_no_server_selected">لم يتم اختيار ملف WireGuard</string>
+    <string name="label_change_server">تبديل</string>
+
+    <string name="setup_required_title">يلزم ربط الخادم أو استيراد ملف WireGuard</string>
+    <string name="setup_required_body">أضف رابط خادم Node.js وPostgreSQL من الإعدادات، أو استورد ملف WireGuard بصيغة .conf لبدء اتصال مشفر حقيقي.</string>
+    <string name="action_configure_api">ضبط الخادم</string>
+    <string name="action_import_conf">استيراد .conf</string>
+    <string name="action_refresh_ip">تحديث IP</string>
+
+    <!-- Servers Screen -->
+    <string name="servers_title">خوادم الشبكة</string>
+    <string name="servers_search_hint">ابحث عن دولة أو مدينة أو عنوان…</string>
+    <string name="filter_all">الكل</string>
+    <string name="filter_favorites">المفضلة</string>
+    <string name="filter_imported">ملفات .conf</string>
+    <string name="filter_backend">خادم API</string>
+    <string name="action_sync_servers">مزامنة الخادم</string>
+    <string name="action_ping_all">فحص Ping</string>
+    <string name="action_add_manual">إعداد يدوي</string>
+    <string name="servers_empty_title">لا توجد سيرفرات محملة بعد</string>
+    <string name="servers_empty_body">قم بمزامنة السيرفرات من خادم Node.js وPostgreSQL أو استيراد ملف .conf حقيقي أو إدخال مفاتيح النفق يدوياً.</string>
+    <string name="label_pro_tier">PRO</string>
+    <string name="label_free_tier">مجاني</string>
+    <string name="label_local_conf">ملف CONF</string>
+    <string name="label_latency_ms">%1$d مللي ث</string>
+    <string name="label_latency_timeout">انتهت المهلة</string>
+    <string name="label_latency_untested">غير مفحوص</string>
+    <string name="action_connect_node">اتصال</string>
+    <string name="action_connected_node">نشط</string>
+    <string name="action_delete_node">حذف</string>
+
+    <!-- Manual Config Dialog -->
+    <string name="manual_config_title">إضافة نفق WireGuard</string>
+    <string name="field_profile_name">اسم الملف الشخصي</string>
+    <string name="field_country_name">الدولة / المنطقة</string>
+    <string name="field_endpoint">نقطة النهاية (host:port)</string>
+    <string name="field_server_pubkey">المفتاح العام للسيرفر (Base64)</string>
+    <string name="field_interface_address">عنوان الواجهة (مثال 10.8.0.2/32)</string>
+    <string name="field_dns">خوادم DNS (مثال 1.1.1.1)</string>
+    <string name="field_allowed_ips">عناوين Allowed IPs</string>
+    <string name="action_save">حفظ</string>
+
+    <!-- Speed Test Screen -->
+    <string name="speed_test_title">اختبار سرعة الشبكة</string>
+    <string name="speed_test_subtitle">قياس حقيقي لزمن الاستجابة TCP والتذبذب وسرعة النقل</string>
+    <string name="phase_idle">جاهز للفحص</string>
+    <string name="phase_ping">جاري قياس Ping</string>
+    <string name="phase_download">جاري اختبار التنزيل</string>
+    <string name="phase_upload">جاري اختبار الرفع</string>
+    <string name="phase_complete">اكتمل الاختبار</string>
+    <string name="phase_error">فشل الاختبار</string>
+    <string name="action_start_test">بدء الاختبار</string>
+    <string name="action_stop_test">إيقاف</string>
+    <string name="label_jitter">التذبذب</string>
+    <string name="label_mbps">ميغابت/ث</string>
+    <string name="label_history">سجل القياسات الأخيرة</string>
+    <string name="history_empty">شغّل الاختبار لتسجيل قياسات السرعة وزمن الاستجابة الفعلية.</string>
+    <string name="label_vpn_on">عبر VPN</string>
+    <string name="label_vpn_off">مباشر</string>
+
+    <!-- Subscriptions Screen -->
+    <string name="plans_title">باقات NEXORA الاحترافية</string>
+    <string name="plans_subtitle">إدارة الاشتراكات عبر Google Play Billing والمزامنة مع PostgreSQL</string>
+    <string name="current_plan_label">الباقة الحالية</string>
+    <string name="plan_free_title">الباقة المجانية</string>
+    <string name="plan_pro_monthly_title">NEXORA Pro الشهري</string>
+    <string name="plan_pro_annual_title">NEXORA Pro السنوي</string>
+    <string name="plan_pro_monthly_desc">سيرفرات WireGuard فائقة السرعة ومزامنة مفاتيح الأجهزة وتوجيه ذو أولوية.</string>
+    <string name="plan_pro_annual_desc">حماية Pro سنوية كاملة مع أقصى توفير ودعم حتى 5 أجهزة متصلة.</string>
+    <string name="action_subscribe">اشتراك الآن</string>
+    <string name="action_restore_purchases">استعادة المشتريات</string>
+    <string name="billing_status_ready">متصل بخدمة Google Play Billing</string>
+    <string name="billing_status_unavailable">خدمة Google Play Billing غير متوفرة في هذا الجهاز أو الإصدار. أضف معرّفات المنتجات في Play Console لتفعيل الدفع الفعلي.</string>
+    <string name="billing_product_unconfigured">المنتج غير منشور بعد في Play Console (المعرف: %1$s)</string>
+    <string name="feature_wireguard">تشفير نواة WireGuard الكامل</string>
+    <string name="feature_no_logs">بنية صارمة بدون سجلات نشاط</string>
+    <string name="feature_split_tunnel">تقسيم النفق حسب التطبيقات</string>
+    <string name="feature_multi_device">مزامنة مفاتيح عدة أجهزة</string>
+
+    <!-- Settings Screen -->
+    <string name="settings_title">إعدادات النفق والنظام</string>
+    <string name="section_backend">خادم Node.js وPostgreSQL</string>
+    <string name="field_api_url">رابط API الأساسي</string>
+    <string name="hint_api_url">https://vpn-api.yourdomain.com</string>
+    <string name="action_save_test_api">حفظ وفحص الاتصال</string>
+    <string name="api_status_ok">متصل بالخادم الخلفي (%1$s)</string>
+    <string name="api_status_error">تعذر الوصول للخادم: %1$s</string>
+    <string name="api_status_not_set">لم يتم ضبط رابط الخادم الخلفي</string>
+
+    <string name="section_language">اللغة واتجاه الواجهة</string>
+    <string name="lang_system">لغة الجهاز تلقائياً</string>
+    <string name="lang_arabic">العربية (RTL)</string>
+    <string name="lang_english">English (LTR)</string>
+
+    <string name="section_wireguard">بروتوكول WireGuard</string>
+    <string name="field_custom_dns">خادم DNS مخصص</string>
+    <string name="field_mtu">قيمة MTU للنفق</string>
+    <string name="toggle_auto_connect">اتصال تلقائي عند الفتح</string>
+    <string name="setting_split_tunneling">تقسيم النفق (التطبيقات المستثناة)</string>
+    <string name="setting_split_tunneling_desc">%1$d تطبيقات مستثناة من نفق VPN</string>
+    <string name="setting_always_on_vpn">الاتصال الدائم ومفتاح الإيقاف (Kill Switch)</string>
+    <string name="setting_always_on_vpn_desc">فتح إعدادات VPN في النظام لتفعيل حظر الاتصال بدون VPN</string>
+    <string name="split_tunnel_dialog_title">استثناء تطبيقات من VPN</string>
+    <string name="action_done">تم</string>
+
+    <!-- Profile / Account Screen -->
+    <string name="profile_title">الحساب الشخصي والمفاتيح</string>
+    <string name="tab_sign_in">تسجيل الدخول</string>
+    <string name="tab_register">إنشاء حساب</string>
+    <string name="field_email">البريد الإلكتروني</string>
+    <string name="field_password">كلمة المرور (8 أحرف فأكثر)</string>
+    <string name="field_full_name">الاسم الظاهر</string>
+    <string name="action_sign_in">تسجيل الدخول عبر JWT</string>
+    <string name="action_register">إنشاء الحساب</string>
+    <string name="action_sign_out">تسجيل الخروج</string>
+    <string name="label_wireguard_pubkey">المفتاح العام للجهاز (Curve25519)</string>
+    <string name="action_copy_key">نسخ المفتاح</string>
+    <string name="action_rotate_key">تدوير المفاتيح</string>
+    <string name="key_copied_msg">تم نسخ المفتاح العام إلى الحافظة</string>
+    <string name="label_active_sessions">جلسات PostgreSQL النشطة</string>
+    <string name="action_revoke_session">إلغاء</string>
+    <string name="sessions_empty">لا توجد جلسات بعيدة متزامنة حالياً.</string>
+    <string name="action_forgot_password">نسيت كلمة المرور؟</string>
+    <string name="reset_password_title">استعادة كلمة المرور</string>
+    <string name="action_send_reset_code">إرسال رمز التحقق</string>
+    <string name="field_reset_code">رمز التحقق (6 أرقام)</string>
+    <string name="field_new_password">كلمة المرور الجديدة (8 أحرف فأكثر)</string>
+    <string name="action_confirm_reset">تحديث كلمة المرور</string>
+    <string name="action_back_to_signin">العودة لتسجيل الدخول</string>
+    <string name="setting_battery_optimization">استقرار النفق وتقليل استهلاك البطارية</string>
+    <string name="setting_battery_optimized">الوضع التكيفي مفعّل (يُفضّل استثناء التطبيق من قيود البطارية لاستقرار الاتصال الدائم)</string>
+    <string name="setting_battery_unrestricted">التشغيل غير المقيد مفعّل في النظام (أقصى استقرار)</string>
+
+    <!-- Errors & Notifications -->
+    <string name="vpn_notification_channel_name">نفق NEXORA VPN</string>
+    <string name="vpn_notification_channel_desc">حالة اتصال WireGuard المستمرة وإحصائيات النقل</string>
+    <string name="vpn_notification_connected">متصل بـ %1$s</string>
+    <string name="vpn_notification_stats">↓ %1$s  •  ↑ %2$s  •  %3$s</string>
+    <string name="error_vpn_permission_denied">لم يمنح النظام إذن تشغيل VPN.</string>
+    <string name="error_invalid_url">يرجى إدخال رابط إنتاجي يبدأ بـ https://.</string>
+</resources>
