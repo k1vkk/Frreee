@@ -30,10 +30,22 @@ jobs:
           echo "SPEEDOFME_API_KEY=${{ secrets.SPEEDOFME_API_KEY }}" >> .env
           echo "SPEEDOFME_DOMAIN=${{ secrets.SPEEDOFME_DOMAIN }}" >> .env
 
-      - name: Decode debug keystore if missing
+      - name: Ensure debug keystore exists
         run: |
-          if [ ! -f debug.keystore ] && [ -f debug.keystore.base64 ]; then
+          if [ ! -f debug.keystore ] && [ -s debug.keystore.base64 ]; then
             base64 -d debug.keystore.base64 > debug.keystore
+          fi
+          if [ ! -f debug.keystore ]; then
+            keytool -genkeypair -v \
+              -keystore debug.keystore \
+              -storepass android \
+              -alias androiddebugkey \
+              -keypass android \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US" \
+              -noprompt
           fi
 
       - name: Run Unit & Robolectric Tests
