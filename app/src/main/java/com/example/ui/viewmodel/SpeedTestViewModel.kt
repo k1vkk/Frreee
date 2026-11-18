@@ -7,10 +7,13 @@ import androidx.lifecycle.viewModelScope
 import com.example.NexoraApp
 import com.example.R
 import com.example.data.local.SpeedTestResultEntity
+import com.example.data.remote.SpeedTestUploadRequest
+import com.example.network.RealHttpSpeedTestEngine
 import com.example.network.SpeedOfMeSpeedTestEngine
 import com.example.network.SpeedTestProgress
 import com.example.vpn.VpnConnectionStatus
 import com.example.vpn.VpnSessionState
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -20,6 +23,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 enum class SpeedHistoryFilter {
     ALL,
@@ -50,9 +54,27 @@ class SpeedTestViewModel(application: Application) : AndroidViewModel(applicatio
     private val speedTestDao = app.database.speedTestDao()
     private val prefsRepo = app.prefsRepo
     private val vpnController = app.vpnController
-    private val engine = SpeedOfMeSpeedTestEngine(app.applicationContext)
+    private val apiClient = app.apiClient
 
-    val progress: StateFlow<SpeedTestProgress> = engine.progress
+    private val somEngine = SpeedOfMeSpeedTestEngine(app.applicationContext)
+    private val httpEngine = RealHttpSpeedTestEngine(app.applicationContext, apiClient.okHttpClient)
+
+    private val useHttpFallback = MutableStateFlow(somEngine.resolveCredentials() == null)
+
+    val progress: StateFlow<SpeedTestProgress> = combine(
+        somEngine.progress,
+        httpEngine.progress,
+        useHttpFallback
+    ) { som, http, isHttp ->
+        if (isHttp) http else som
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = SpeedTestProgress(
+            provider = if (somEngine.resolveCredentials() != null) "speedofme" else "cloudflare_http"
+        )
+    )
+
     val vpnState: StateFlow<VpnSessionState> = vpnController.state
 
     val ecoMode: StateFlow<Boolean> = prefsRepo.preferencesFlow
@@ -116,11 +138,11 @@ class SpeedTestViewModel(application: Application) : AndroidViewModel(applicatio
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), VpnComparisonUiState())
 
     fun attachWebView(webView: WebView) {
-        engine.attachWebView(webView)
+        somEngine.attachWebView(webView)
     }
 
     fun detachWebView(webView: WebView) {
-        engine.detachWebView(webView)
+        somEngine.detachWebView(webView)
     }
 
     fun startSpeedTest() {
@@ -134,10 +156,22 @@ class SpeedTestViewModel(application: Application) : AndroidViewModel(applicatio
                 app.getString(R.string.label_direct_isp)
             }
 
-            engine.startTest(
-                ecoMode = prefs.speedTestEcoMode,
-                includeUpload = prefs.speedTestIncludeUpload
-            ) { finalResult ->
+            // Check local BuildConfig credentials or remote /api/speedtest/config credentials
+            var creds = somEngine.resolveCredentials()
+            if (creds == null) {
+                val service = apiClient.createService(prefs.apiBaseUrl)
+                if (service != null) {
+                    runCatching {
+                        val cfgRes = withContext(Dispatchers.IO) { service.getSpeedTestConfig() }
+                        val cfg = cfgRes.body()
+                        if (cfgRes.isSuccessful && cfg?.speedOfMeConfigured == true) {
+                            creds = somEngine.resolveCredentials(cfg.apiKey, cfg.domain)
+                        }
+                    }
+                }
+            }
+
+            val onDone: (SpeedTestProgress) -> Unit = { finalResult ->
                 viewModelScope.launch {
                     speedTestDao.insert(
                         SpeedTestResultEntity(
@@ -153,16 +187,65 @@ class SpeedTestViewModel(application: Application) : AndroidViewModel(applicatio
                             publicIp = finalResult.publicIp,
                             ispHostname = finalResult.ispHostname,
                             dataUsedBytes = finalResult.dataUsedBytes,
-                            sustainTimeSec = finalResult.sustainTimeSec
+                            sustainTimeSec = finalResult.sustainTimeSec,
+                            provider = finalResult.provider
                         )
                     )
+                    if (prefs.authToken.isNotBlank()) {
+                        val service = apiClient.createService(prefs.apiBaseUrl)
+                        if (service != null) {
+                            withContext(Dispatchers.IO) {
+                                runCatching {
+                                    service.uploadSpeedTestResult(
+                                        bearer = "Bearer ${prefs.authToken}",
+                                        body = SpeedTestUploadRequest(
+                                            serverId = vpnSnapshot.activeServer?.id?.takeIf { vpnOn },
+                                            provider = finalResult.provider,
+                                            vpnActive = vpnOn,
+                                            serverLabel = label,
+                                            pingMs = finalResult.pingMs,
+                                            jitterMs = finalResult.jitterMs,
+                                            downloadMbps = finalResult.downloadMbps,
+                                            uploadMbps = finalResult.uploadMbps,
+                                            maxDownloadMbps = finalResult.maxDownloadMbps,
+                                            maxUploadMbps = finalResult.maxUploadMbps,
+                                            dataUsedBytes = finalResult.dataUsedBytes,
+                                            testServer = finalResult.testServer.ifBlank { null },
+                                            publicIp = finalResult.publicIp.ifBlank { null }
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
+            }
+
+            if (creds != null) {
+                useHttpFallback.value = false
+                httpEngine.stop(resetToIdle = false)
+                somEngine.startTest(
+                    ecoMode = prefs.speedTestEcoMode,
+                    includeUpload = prefs.speedTestIncludeUpload,
+                    overrideApiKey = creds!!.first,
+                    overrideDomain = creds!!.second,
+                    onCompleted = onDone
+                )
+            } else {
+                useHttpFallback.value = true
+                somEngine.stop(resetToIdle = false)
+                httpEngine.startTest(
+                    ecoMode = prefs.speedTestEcoMode,
+                    includeUpload = prefs.speedTestIncludeUpload,
+                    onCompleted = onDone
+                )
             }
         }
     }
 
     fun stopSpeedTest() {
-        engine.stop(resetToIdle = true)
+        somEngine.stop(resetToIdle = true)
+        httpEngine.stop(resetToIdle = true)
     }
 
     fun setEcoMode(enabled: Boolean) {
@@ -217,7 +300,8 @@ class SpeedTestViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     override fun onCleared() {
-        engine.stop(resetToIdle = false)
+        somEngine.stop(resetToIdle = false)
+        httpEngine.stop(resetToIdle = false)
         super.onCleared()
     }
 

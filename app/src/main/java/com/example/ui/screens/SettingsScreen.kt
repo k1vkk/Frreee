@@ -32,9 +32,11 @@ import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.SupportAgent
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -65,7 +67,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.example.NexoraConfig
 import com.example.R
 import com.example.data.local.UserPreferences
 import com.example.ui.components.NexoraGlowCard
@@ -78,7 +79,6 @@ import com.example.ui.theme.ObsidianSurface
 import com.example.ui.theme.StatusAmber
 import com.example.ui.theme.StatusCrimson
 import com.example.ui.theme.StatusEmerald
-import com.example.ui.theme.TelemetryMonoStyle
 import com.example.ui.theme.TextSecondary
 import com.example.ui.viewmodel.ApiHealthState
 
@@ -92,19 +92,25 @@ data class InstalledAppItem(
 fun SettingsScreen(
     preferences: UserPreferences,
     apiHealth: ApiHealthState,
+    onSaveAndTestApi: (String) -> Unit,
     onRefreshBackendHealth: () -> Unit,
     onLanguageSelected: (String) -> Unit,
-    onSaveWireGuardSettings: (String, Int, Boolean, Boolean, Boolean, Boolean) -> Unit,
+    onSaveWireGuardSettings: (String, Int, Boolean, Boolean, Boolean, Boolean, Boolean, Boolean) -> Unit,
     onToggleExcludedPackage: (String) -> Unit,
+    onNavigateHistory: () -> Unit,
+    onNavigateSupport: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    var apiUrlInput by remember(preferences.apiBaseUrl) { mutableStateOf(preferences.apiBaseUrl) }
     var dnsInput by remember(preferences.customDns) { mutableStateOf(preferences.customDns) }
     var mtuInput by remember(preferences.tunnelMtu) { mutableStateOf(preferences.tunnelMtu.toString()) }
     var autoConnect by remember(preferences.autoConnect) { mutableStateOf(preferences.autoConnect) }
     var killSwitch by remember(preferences.killSwitchEnabled) { mutableStateOf(preferences.killSwitchEnabled) }
     var autoReconnect by remember(preferences.autoReconnectEnabled) { mutableStateOf(preferences.autoReconnectEnabled) }
+    var autoFailover by remember(preferences.autoFailoverEnabled) { mutableStateOf(preferences.autoFailoverEnabled) }
     var dnsLeakProtection by remember(preferences.dnsLeakProtectionEnabled) { mutableStateOf(preferences.dnsLeakProtectionEnabled) }
+    var ipv6LeakProtection by remember(preferences.ipv6LeakProtectionEnabled) { mutableStateOf(preferences.ipv6LeakProtectionEnabled) }
     var showSplitTunnelDialog by remember { mutableStateOf(false) }
 
     Column(
@@ -125,7 +131,7 @@ fun SettingsScreen(
                 color = MaterialTheme.colorScheme.onBackground
             )
 
-            // Read-Only Embedded Backend Connection Status
+            // Configurable Node.js + PostgreSQL HTTPS API Endpoint
             NexoraGlowCard(modifier = Modifier.fillMaxWidth()) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -152,9 +158,30 @@ fun SettingsScreen(
                         }
                     }
                 }
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = apiUrlInput,
+                    onValueChange = { apiUrlInput = it },
+                    label = { Text(stringResource(R.string.field_api_url)) },
+                    placeholder = { Text(stringResource(R.string.hint_api_url), color = TextSecondary) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().testTag("api_url_input")
+                )
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = { onSaveAndTestApi(apiUrlInput) },
+                    colors = ButtonDefaults.buttonColors(containerColor = ElectricBlue),
+                    modifier = Modifier.fillMaxWidth().testTag("save_test_api_button")
+                ) {
+                    Text(stringResource(R.string.action_save_test_api), fontWeight = FontWeight.Bold)
+                }
+                Spacer(Modifier.height(8.dp))
                 when (apiHealth) {
-                    ApiHealthState.NotConfigured,
+                    ApiHealthState.NotConfigured -> Text(
+                        text = stringResource(R.string.api_status_not_set),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = StatusAmber
+                    )
                     ApiHealthState.Checking -> Text(
                         text = stringResource(R.string.label_ip_checking),
                         style = MaterialTheme.typography.bodyMedium,
@@ -173,14 +200,6 @@ fun SettingsScreen(
                         text = stringResource(R.string.api_status_error, apiHealth.reason),
                         style = MaterialTheme.typography.bodyMedium,
                         color = StatusCrimson
-                    )
-                }
-                if (NexoraConfig.IS_LOCAL_DEMO_MODE) {
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        text = stringResource(R.string.label_local_demo_endpoint, NexoraConfig.NEXORA_API_BASE_URL),
-                        style = TelemetryMonoStyle,
-                        color = StatusAmber
                     )
                 }
             }
@@ -240,38 +259,13 @@ fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(10.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(stringResource(R.string.toggle_auto_connect), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                    Switch(checked = autoConnect, onCheckedChange = { autoConnect = it })
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(stringResource(R.string.toggle_kill_switch), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                    Switch(checked = killSwitch, onCheckedChange = { killSwitch = it })
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(stringResource(R.string.toggle_auto_reconnect), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                    Switch(checked = autoReconnect, onCheckedChange = { autoReconnect = it })
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(stringResource(R.string.toggle_dns_leak_protection), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                    Switch(checked = dnsLeakProtection, onCheckedChange = { dnsLeakProtection = it })
-                }
+                SettingToggleRow(stringResource(R.string.toggle_auto_connect), autoConnect) { autoConnect = it }
+                SettingToggleRow(stringResource(R.string.toggle_kill_switch), killSwitch) { killSwitch = it }
+                SettingToggleRow(stringResource(R.string.toggle_auto_reconnect), autoReconnect) { autoReconnect = it }
+                SettingToggleRow(stringResource(R.string.toggle_auto_failover), autoFailover) { autoFailover = it }
+                SettingToggleRow(stringResource(R.string.toggle_dns_leak_protection), dnsLeakProtection) { dnsLeakProtection = it }
+                SettingToggleRow(stringResource(R.string.toggle_ipv6_leak_protection), ipv6LeakProtection) { ipv6LeakProtection = it }
+
                 Spacer(Modifier.height(10.dp))
                 Button(
                     onClick = {
@@ -282,17 +276,19 @@ fun SettingsScreen(
                             autoConnect,
                             killSwitch,
                             autoReconnect,
-                            dnsLeakProtection
+                            autoFailover,
+                            dnsLeakProtection,
+                            ipv6LeakProtection
                         )
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = ElectricBlue),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth().testTag("save_wg_settings_button")
                 ) {
                     Text(stringResource(R.string.action_save), fontWeight = FontWeight.Bold)
                 }
             }
 
-            // Split Tunneling & Always-On VPN
+            // Split Tunneling & Always-On VPN & Battery
             Surface(
                 onClick = { showSplitTunnelDialog = true },
                 shape = RoundedCornerShape(16.dp),
@@ -383,6 +379,35 @@ fun SettingsScreen(
                 }
             }
 
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                Surface(
+                    onClick = onNavigateHistory,
+                    shape = RoundedCornerShape(14.dp),
+                    color = ObsidianCard,
+                    border = BorderStroke(1.dp, ObsidianBorder),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.History, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(R.string.nav_history), style = MaterialTheme.typography.labelLarge)
+                    }
+                }
+                Surface(
+                    onClick = onNavigateSupport,
+                    shape = RoundedCornerShape(14.dp),
+                    color = ObsidianCard,
+                    border = BorderStroke(1.dp, ObsidianBorder),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.SupportAgent, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(R.string.nav_support), style = MaterialTheme.typography.labelLarge)
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(20.dp))
         }
     }
@@ -393,6 +418,22 @@ fun SettingsScreen(
             onTogglePackage = onToggleExcludedPackage,
             onDismiss = { showSplitTunnelDialog = false }
         )
+    }
+}
+
+@Composable
+private fun SettingToggleRow(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f).padding(end = 8.dp))
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 

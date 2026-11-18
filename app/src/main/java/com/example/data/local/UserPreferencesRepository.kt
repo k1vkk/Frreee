@@ -10,7 +10,7 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import com.example.BuildConfig
+import com.example.NexoraConfig
 import com.wireguard.crypto.KeyPair
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -18,20 +18,14 @@ import kotlinx.coroutines.flow.map
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "nexora_prefs")
 
-private fun resolveConfiguredDefaultApiUrl(): String {
-    val candidate = BuildConfig.NEXORA_API_BASE_URL.trim().trimEnd('/')
-    return if (candidate.startsWith("https://") &&
-        !candidate.contains("localhost") &&
-        !candidate.contains("yourdomain.com")
-    ) candidate else ""
-}
-
 data class UserPreferences(
-    val apiBaseUrl: String = resolveConfiguredDefaultApiUrl(),
+    val apiBaseUrl: String = NexoraConfig.DEFAULT_API_BASE_URL,
     val authToken: String = "",
     val userEmail: String = "",
     val userDisplayName: String = "",
     val planTier: String = "free",
+    val subscriptionStatus: String = "active",
+    val subscriptionExpiresAt: String? = null,
     val wgPrivateKey: String = "",
     val wgPublicKey: String = "",
     val selectedServerId: String = "",
@@ -41,7 +35,9 @@ data class UserPreferences(
     val autoConnect: Boolean = false,
     val killSwitchEnabled: Boolean = true,
     val autoReconnectEnabled: Boolean = true,
+    val autoFailoverEnabled: Boolean = true,
     val dnsLeakProtectionEnabled: Boolean = true,
+    val ipv6LeakProtectionEnabled: Boolean = true,
     val excludedPackages: Set<String> = emptySet(),
     val totalRxBytes: Long = 0L,
     val totalTxBytes: Long = 0L,
@@ -57,6 +53,8 @@ class UserPreferencesRepository(private val context: Context) {
         val USER_EMAIL = stringPreferencesKey("user_email")
         val USER_DISPLAY_NAME = stringPreferencesKey("user_display_name")
         val PLAN_TIER = stringPreferencesKey("plan_tier")
+        val SUBSCRIPTION_STATUS = stringPreferencesKey("subscription_status")
+        val SUBSCRIPTION_EXPIRES_AT = stringPreferencesKey("subscription_expires_at")
         val WG_PRIVATE_KEY = stringPreferencesKey("wg_private_key")
         val WG_PUBLIC_KEY = stringPreferencesKey("wg_public_key")
         val SELECTED_SERVER_ID = stringPreferencesKey("selected_server_id")
@@ -66,7 +64,9 @@ class UserPreferencesRepository(private val context: Context) {
         val AUTO_CONNECT = booleanPreferencesKey("auto_connect")
         val KILL_SWITCH = booleanPreferencesKey("kill_switch_enabled")
         val AUTO_RECONNECT = booleanPreferencesKey("auto_reconnect_enabled")
+        val AUTO_FAILOVER = booleanPreferencesKey("auto_failover_enabled")
         val DNS_LEAK_PROTECTION = booleanPreferencesKey("dns_leak_protection_enabled")
+        val IPV6_LEAK_PROTECTION = booleanPreferencesKey("ipv6_leak_protection_enabled")
         val EXCLUDED_PACKAGES = stringSetPreferencesKey("excluded_packages")
         val TOTAL_RX_BYTES = longPreferencesKey("total_rx_bytes")
         val TOTAL_TX_BYTES = longPreferencesKey("total_tx_bytes")
@@ -75,13 +75,16 @@ class UserPreferencesRepository(private val context: Context) {
     }
 
     val preferencesFlow: Flow<UserPreferences> = context.dataStore.data.map { prefs ->
+        val storedUrl = NexoraConfig.normalizeProductionHttpsUrl(prefs[Keys.API_BASE_URL])
         UserPreferences(
-            apiBaseUrl = (prefs[Keys.API_BASE_URL] ?: "").ifBlank { resolveConfiguredDefaultApiUrl() },
-            authToken = prefs[Keys.AUTH_TOKEN] ?: "",
+            apiBaseUrl = storedUrl ?: NexoraConfig.DEFAULT_API_BASE_URL,
+            authToken = CryptoPrefsHelper.decrypt(prefs[Keys.AUTH_TOKEN] ?: ""),
             userEmail = prefs[Keys.USER_EMAIL] ?: "",
             userDisplayName = prefs[Keys.USER_DISPLAY_NAME] ?: "",
             planTier = prefs[Keys.PLAN_TIER] ?: "free",
-            wgPrivateKey = prefs[Keys.WG_PRIVATE_KEY] ?: "",
+            subscriptionStatus = prefs[Keys.SUBSCRIPTION_STATUS] ?: "active",
+            subscriptionExpiresAt = prefs[Keys.SUBSCRIPTION_EXPIRES_AT],
+            wgPrivateKey = CryptoPrefsHelper.decrypt(prefs[Keys.WG_PRIVATE_KEY] ?: ""),
             wgPublicKey = prefs[Keys.WG_PUBLIC_KEY] ?: "",
             selectedServerId = prefs[Keys.SELECTED_SERVER_ID] ?: "",
             languageMode = prefs[Keys.LANGUAGE_MODE] ?: "system",
@@ -91,7 +94,9 @@ class UserPreferencesRepository(private val context: Context) {
             autoConnect = prefs[Keys.AUTO_CONNECT] ?: false,
             killSwitchEnabled = prefs[Keys.KILL_SWITCH] ?: true,
             autoReconnectEnabled = prefs[Keys.AUTO_RECONNECT] ?: true,
+            autoFailoverEnabled = prefs[Keys.AUTO_FAILOVER] ?: true,
             dnsLeakProtectionEnabled = prefs[Keys.DNS_LEAK_PROTECTION] ?: true,
+            ipv6LeakProtectionEnabled = prefs[Keys.IPV6_LEAK_PROTECTION] ?: true,
             excludedPackages = prefs[Keys.EXCLUDED_PACKAGES] ?: emptySet(),
             totalRxBytes = prefs[Keys.TOTAL_RX_BYTES] ?: 0L,
             totalTxBytes = prefs[Keys.TOTAL_TX_BYTES] ?: 0L,
@@ -113,31 +118,52 @@ class UserPreferencesRepository(private val context: Context) {
         val priv = keyPair.privateKey.toBase64()
         val pub = keyPair.publicKey.toBase64()
         context.dataStore.edit { prefs ->
-            prefs[Keys.WG_PRIVATE_KEY] = priv
+            prefs[Keys.WG_PRIVATE_KEY] = CryptoPrefsHelper.encrypt(priv)
             prefs[Keys.WG_PUBLIC_KEY] = pub
         }
         return priv to pub
     }
 
     suspend fun setApiBaseUrl(url: String) {
-        val normalized = url.trim().trimEnd('/')
+        val normalized = NexoraConfig.normalizeProductionHttpsUrl(url) ?: ""
         context.dataStore.edit { prefs ->
-            prefs[Keys.API_BASE_URL] = normalized
+            if (normalized.isBlank()) {
+                prefs.remove(Keys.API_BASE_URL)
+            } else {
+                prefs[Keys.API_BASE_URL] = normalized
+            }
         }
     }
 
-    suspend fun setAuthSession(token: String, email: String, displayName: String, planTier: String) {
+    suspend fun setAuthSession(
+        token: String,
+        email: String,
+        displayName: String,
+        planTier: String,
+        subscriptionStatus: String = "active",
+        expiresAt: String? = null
+    ) {
         context.dataStore.edit { prefs ->
-            prefs[Keys.AUTH_TOKEN] = token
+            prefs[Keys.AUTH_TOKEN] = CryptoPrefsHelper.encrypt(token)
             prefs[Keys.USER_EMAIL] = email
             prefs[Keys.USER_DISPLAY_NAME] = displayName
             prefs[Keys.PLAN_TIER] = planTier
+            prefs[Keys.SUBSCRIPTION_STATUS] = subscriptionStatus
+            if (expiresAt != null) {
+                prefs[Keys.SUBSCRIPTION_EXPIRES_AT] = expiresAt
+            } else {
+                prefs.remove(Keys.SUBSCRIPTION_EXPIRES_AT)
+            }
         }
     }
 
-    suspend fun updatePlanTier(planTier: String) {
+    suspend fun updateSubscription(planTier: String, status: String = "active", expiresAt: String? = null) {
         context.dataStore.edit { prefs ->
             prefs[Keys.PLAN_TIER] = planTier
+            prefs[Keys.SUBSCRIPTION_STATUS] = status
+            if (expiresAt != null) {
+                prefs[Keys.SUBSCRIPTION_EXPIRES_AT] = expiresAt
+            }
         }
     }
 
@@ -146,7 +172,9 @@ class UserPreferencesRepository(private val context: Context) {
             prefs.remove(Keys.AUTH_TOKEN)
             prefs.remove(Keys.USER_EMAIL)
             prefs.remove(Keys.USER_DISPLAY_NAME)
+            prefs.remove(Keys.SUBSCRIPTION_EXPIRES_AT)
             prefs[Keys.PLAN_TIER] = "free"
+            prefs[Keys.SUBSCRIPTION_STATUS] = "active"
         }
     }
 
@@ -168,7 +196,9 @@ class UserPreferencesRepository(private val context: Context) {
         autoConnect: Boolean,
         killSwitch: Boolean,
         autoReconnect: Boolean,
-        dnsLeakProtection: Boolean
+        autoFailover: Boolean,
+        dnsLeakProtection: Boolean,
+        ipv6LeakProtection: Boolean
     ) {
         context.dataStore.edit { prefs ->
             prefs[Keys.CUSTOM_DNS] = customDns.trim()
@@ -177,7 +207,9 @@ class UserPreferencesRepository(private val context: Context) {
             prefs[Keys.AUTO_CONNECT] = autoConnect
             prefs[Keys.KILL_SWITCH] = killSwitch
             prefs[Keys.AUTO_RECONNECT] = autoReconnect
+            prefs[Keys.AUTO_FAILOVER] = autoFailover
             prefs[Keys.DNS_LEAK_PROTECTION] = dnsLeakProtection
+            prefs[Keys.IPV6_LEAK_PROTECTION] = ipv6LeakProtection
         }
     }
 

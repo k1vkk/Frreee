@@ -22,13 +22,18 @@ object WireGuardConfigHelper {
             val parsed = Config.parse(ByteArrayInputStream(rawText.toByteArray(Charsets.UTF_8)))
             val peer = parsed.peers.firstOrNull()
                 ?: return Result.failure(IllegalArgumentException("WireGuard .conf contains no [Peer] section"))
-            val endpoint = peer.endpoint.map { it.toString() }.orElse("Unknown Endpoint")
+            val endpoint = peer.endpoint.map { it.toString() }.orElse("")
+            if (!endpoint.contains(":")) {
+                return Result.failure(IllegalArgumentException("WireGuard .conf [Peer] Endpoint is missing"))
+            }
             val dnsList = parsed.`interface`.dnsServers.joinToString(", ") { it.hostAddress ?: "" }
                 .ifBlank { STRICT_DUAL_STACK_DNS }
             val allAddrs = parsed.`interface`.addresses.map { it.toString() }
             val v4 = allAddrs.firstOrNull { !it.contains(":") } ?: "10.8.0.2/32"
             val v6 = allAddrs.firstOrNull { it.contains(":") } ?: "fd80:4e58:5200::2/128"
             val cleanName = fileName.removeSuffix(".conf").ifBlank { "Imported WireGuard" }
+            val host = endpoint.substringBeforeLast(':').trim('[', ']')
+            val port = endpoint.substringAfterLast(':').toIntOrNull() ?: 51820
 
             Result.success(
                 ServerProfileEntity(
@@ -37,7 +42,9 @@ object WireGuardConfigHelper {
                     name = cleanName,
                     countryName = "WireGuard Config",
                     countryCode = "WG",
-                    city = endpoint.substringBefore(':'),
+                    city = host,
+                    publicIp = host,
+                    serverPort = port,
                     endpoint = endpoint,
                     serverPublicKey = peer.publicKey.toBase64(),
                     dnsServers = dnsList,
@@ -64,6 +71,7 @@ object WireGuardConfigHelper {
         assignedIpv6: String,
         customDns: String,
         dnsLeakProtectionEnabled: Boolean,
+        ipv6LeakProtectionEnabled: Boolean,
         mtu: Int,
         excludedPackages: Set<String>,
         wgQuickConfigFromBackend: String? = null
@@ -72,6 +80,11 @@ object WireGuardConfigHelper {
             customDns.ifBlank { profile.dnsServers.ifBlank { STRICT_DUAL_STACK_DNS } }
         } else {
             customDns.ifBlank { profile.dnsServers }
+        }
+        val enforcedAllowedIps = if (dnsLeakProtectionEnabled || ipv6LeakProtectionEnabled) {
+            "0.0.0.0/0, ::/0"
+        } else {
+            profile.allowedIps.ifBlank { "0.0.0.0/0, ::/0" }
         }
 
         if (!wgQuickConfigFromBackend.isNullOrBlank()) {
@@ -84,6 +97,7 @@ object WireGuardConfigHelper {
                     baseConfig = parsedResult,
                     fallbackPrivateKey = privateKeyBase64,
                     effectiveDns = effectiveDns,
+                    enforceStrictRouting = dnsLeakProtectionEnabled || ipv6LeakProtectionEnabled,
                     dnsLeakProtectionEnabled = dnsLeakProtectionEnabled,
                     mtu = mtu,
                     excludedPackages = excludedPackages
@@ -97,6 +111,7 @@ object WireGuardConfigHelper {
                 baseConfig = baseConfig,
                 fallbackPrivateKey = baseConfig.`interface`.keyPair.privateKey.toBase64(),
                 effectiveDns = effectiveDns,
+                enforceStrictRouting = dnsLeakProtectionEnabled || ipv6LeakProtectionEnabled,
                 dnsLeakProtectionEnabled = dnsLeakProtectionEnabled,
                 mtu = mtu,
                 excludedPackages = excludedPackages
@@ -123,10 +138,7 @@ object WireGuardConfigHelper {
         val peer = Peer.Builder()
             .parsePublicKey(profile.serverPublicKey)
             .parseEndpoint(profile.endpoint)
-            .parseAllowedIPs(
-                if (dnsLeakProtectionEnabled) "0.0.0.0/0, ::/0"
-                else profile.allowedIps.ifBlank { "0.0.0.0/0, ::/0" }
-            )
+            .parseAllowedIPs(enforcedAllowedIps)
             .setPersistentKeepalive(25)
             .build()
 
@@ -156,6 +168,7 @@ object WireGuardConfigHelper {
         baseConfig: Config,
         fallbackPrivateKey: String,
         effectiveDns: String,
+        enforceStrictRouting: Boolean,
         dnsLeakProtectionEnabled: Boolean,
         mtu: Int,
         excludedPackages: Set<String>
@@ -178,7 +191,7 @@ object WireGuardConfigHelper {
         }
         val cfgBuilder = Config.Builder().setInterface(ifaceBuilder.build())
         baseConfig.peers.forEach { basePeer ->
-            if (dnsLeakProtectionEnabled) {
+            if (enforceStrictRouting) {
                 val enforcedPeer = Peer.Builder()
                     .setPublicKey(basePeer.publicKey)
                     .apply {

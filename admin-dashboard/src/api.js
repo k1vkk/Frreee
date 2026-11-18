@@ -16,7 +16,10 @@ export async function apiRequest(baseUrl, path, { method = 'GET', token = '', ad
   }
   const headers = { 'Content-Type': 'application/json' };
   if (token) headers.Authorization = `Bearer ${token}`;
-  if (adminKey) headers['x-admin-key'] = adminKey;
+  if (adminKey) {
+    headers['x-admin-key'] = adminKey;
+    headers['x-admin-secret'] = adminKey;
+  }
 
   const res = await fetch(`${cleanBase}${path}`, {
     method,

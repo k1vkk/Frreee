@@ -1,0 +1,41 @@
+name: NEXORA Backend & Admin CI/CD
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'backend/**'
+      - 'admin-dashboard/**'
+      - '.github/workflows/backend-deploy.yml'
+  pull_request:
+    branches: [ main, master ]
+    paths:
+      - 'backend/**'
+      - 'admin-dashboard/**'
+  workflow_dispatch:
+
+jobs:
+  verify-backend-and-admin:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install & Test Backend
+        working-directory: backend
+        run: |
+          npm ci
+          node --check src/server.js
+          node --check node-agent/agent.js
+          npm test
+
+      - name: Install & Build Admin Dashboard
+        working-directory: admin-dashboard
+        run: |
+          npm ci
+          npm run build

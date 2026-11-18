@@ -3,16 +3,16 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { pool } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
+import { asyncHandler } from '../middleware/asyncHandler.js';
+import { isValidUuid, isValidWireGuardKey } from '../utils/validators.js';
 
 const execFileAsync = promisify(execFile);
 const router = Router();
 
-export function isValidWireGuardKey(key) {
-  return typeof key === 'string' && /^[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=$/.test(key.trim());
-}
+export { isValidWireGuardKey };
 
 async function callVpsAgent(agentUrl, path, method = 'GET', body = null) {
-  const secret = process.env.NODE_AGENT_SECRET || '';
+  const secret = (process.env.NODE_AGENT_SECRET || '').trim();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 5000);
   try {
@@ -76,10 +76,10 @@ async function removePeerFromWireGuardNode(server, clientPublicKey) {
   }
 }
 
-function buildWgQuickConfig({ assignedIpv4, assignedIpv6, dnsServers, mtu, serverPublicKey, endpoint, allowedIps }) {
+export function buildWgQuickConfig({ assignedIpv4, assignedIpv6, dnsServers, mtu, serverPublicKey, endpoint, allowedIps }) {
   return [
     '[Interface]',
-    '# PrivateKey must be inserted by the client device (never stored on server)',
+    '# PrivateKey stays strictly on client device (never stored on server)',
     `Address = ${assignedIpv4}, ${assignedIpv6}`,
     `DNS = ${dnsServers}`,
     `MTU = ${mtu}`,
@@ -93,15 +93,22 @@ function buildWgQuickConfig({ assignedIpv4, assignedIpv6, dnsServers, mtu, serve
 }
 
 export async function provisionAndSyncPeer({ userId, serverId, clientPublicKey, markConnected }) {
+  if (!isValidUuid(serverId)) {
+    const err = new Error('Invalid serverId UUID');
+    err.statusCode = 400;
+    throw err;
+  }
   const cleanKey = clientPublicKey.trim();
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
+    // Lock server row to eliminate subnet IP allocation race conditions
     const serverRes = await client.query(
       `SELECT * FROM vpn_servers
        WHERE id = $1 AND is_active = TRUE AND health_status = 'online'
-         AND endpoint IS NOT NULL AND server_public_key IS NOT NULL`,
+         AND endpoint IS NOT NULL AND server_public_key IS NOT NULL
+       FOR UPDATE`,
       [serverId]
     );
     if (serverRes.rowCount === 0) {
@@ -114,11 +121,12 @@ export async function provisionAndSyncPeer({ userId, serverId, clientPublicKey, 
 
     if (server.tier === 'pro') {
       const subRes = await client.query(
-        'SELECT plan_tier, status FROM subscriptions WHERE user_id = $1',
+        'SELECT plan_tier, status, expires_at FROM subscriptions WHERE user_id = $1',
         [userId]
       );
       const sub = subRes.rows[0];
-      if (!sub || sub.status !== 'active' || sub.plan_tier === 'free') {
+      const expired = sub?.expires_at && new Date(sub.expires_at) < new Date();
+      if (!sub || sub.status !== 'active' || sub.plan_tier === 'free' || expired) {
         await client.query('ROLLBACK');
         const err = new Error('Active NEXORA Pro subscription required for this node');
         err.statusCode = 403;
@@ -175,6 +183,14 @@ export async function provisionAndSyncPeer({ userId, serverId, clientPublicKey, 
     const allowedOnVps = `${assignedIpv4},${assignedIpv6}`;
     await syncPeerOnWireGuardNode(server, cleanKey, allowedOnVps);
 
+    if (markConnected === true) {
+      await client.query(
+        `INSERT INTO connection_logs (user_id, server_id, node_code, client_public_key, assigned_ipv4, assigned_ipv6)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [userId, server.id, server.node_code, cleanKey, assignedIpv4, assignedIpv6]
+      );
+    }
+
     await client.query('COMMIT');
 
     const allowedIps = '0.0.0.0/0, ::/0';
@@ -214,20 +230,26 @@ export async function provisionAndSyncPeer({ userId, serverId, clientPublicKey, 
   }
 }
 
-// POST /api/v1/vpn/connect
-router.post('/connect', requireAuth, async (req, res) => {
+async function resolveServerId({ serverId, nodeCode }) {
+  if (serverId) return serverId;
+  if (nodeCode) {
+    const lookup = await pool.query('SELECT id FROM vpn_servers WHERE node_code = $1', [String(nodeCode).toUpperCase()]);
+    if (lookup.rowCount === 0) return null;
+    return lookup.rows[0].id;
+  }
+  return null;
+}
+
+// POST /api/vpn/connect
+router.post('/connect', requireAuth, asyncHandler(async (req, res) => {
   const { serverId, nodeCode, clientPublicKey } = req.body || {};
   if (!isValidWireGuardKey(clientPublicKey) || (!serverId && !nodeCode)) {
     return res.status(400).json({ error: 'Valid serverId (or nodeCode) and WireGuard Curve25519 clientPublicKey required' });
   }
 
   try {
-    let targetServerId = serverId;
-    if (!targetServerId && nodeCode) {
-      const lookup = await pool.query('SELECT id FROM vpn_servers WHERE node_code = $1', [String(nodeCode).toUpperCase()]);
-      if (lookup.rowCount === 0) return res.status(404).json({ error: 'Unknown GCC nodeCode' });
-      targetServerId = lookup.rows[0].id;
-    }
+    const targetServerId = await resolveServerId({ serverId, nodeCode });
+    if (!targetServerId) return res.status(404).json({ error: 'Unknown GCC nodeCode' });
 
     const result = await provisionAndSyncPeer({
       userId: req.auth.userId,
@@ -239,14 +261,40 @@ router.post('/connect', requireAuth, async (req, res) => {
   } catch (err) {
     return res.status(err.statusCode || 500).json({ error: err.message || 'VPN connect failed' });
   }
-});
+}));
 
-// POST /api/v1/vpn/disconnect
-router.post('/disconnect', requireAuth, async (req, res) => {
-  const { serverId, clientPublicKey, rxBytes, txBytes } = req.body || {};
+// POST /api/vpn/register-peer - Registers client WireGuard public key without marking active tunnel session
+router.post('/register-peer', requireAuth, asyncHandler(async (req, res) => {
+  const { serverId, nodeCode, clientPublicKey } = req.body || {};
+  if (!isValidWireGuardKey(clientPublicKey) || (!serverId && !nodeCode)) {
+    return res.status(400).json({ error: 'Valid serverId (or nodeCode) and WireGuard Curve25519 clientPublicKey required' });
+  }
+
+  try {
+    const targetServerId = await resolveServerId({ serverId, nodeCode });
+    if (!targetServerId) return res.status(404).json({ error: 'Unknown GCC nodeCode' });
+
+    const result = await provisionAndSyncPeer({
+      userId: req.auth.userId,
+      serverId: targetServerId,
+      clientPublicKey,
+      markConnected: false
+    });
+    return res.status(201).json(result);
+  } catch (err) {
+    return res.status(err.statusCode || 500).json({ error: err.message || 'Peer registration failed' });
+  }
+}));
+
+// POST /api/vpn/disconnect
+router.post('/disconnect', requireAuth, asyncHandler(async (req, res) => {
+  const { serverId, clientPublicKey, rxBytes, txBytes, reason } = req.body || {};
+  if (serverId && !isValidUuid(serverId)) {
+    return res.status(400).json({ error: 'Invalid serverId UUID' });
+  }
   try {
     const peersRes = await pool.query(
-      `SELECT p.id, p.server_id, p.client_public_key, s.agent_url, s.node_code
+      `SELECT p.id, p.server_id, p.client_public_key, p.last_connected_at, s.agent_url, s.node_code
        FROM wireguard_peers p
        JOIN vpn_servers s ON s.id = p.server_id
        WHERE p.user_id = $1
@@ -255,6 +303,9 @@ router.post('/disconnect', requireAuth, async (req, res) => {
          AND p.is_connected = TRUE`,
       [req.auth.userId, serverId || null, clientPublicKey ? clientPublicKey.trim() : null]
     );
+
+    const safeRx = Number.isFinite(Number(rxBytes)) ? Number(rxBytes) : 0;
+    const safeTx = Number.isFinite(Number(txBytes)) ? Number(txBytes) : 0;
 
     for (const peer of peersRes.rows) {
       try {
@@ -266,10 +317,28 @@ router.post('/disconnect', requireAuth, async (req, res) => {
         `UPDATE wireguard_peers
          SET is_connected = FALSE,
              disconnected_at = NOW(),
-             rx_bytes = GREATEST(rx_bytes, COALESCE($2::bigint, 0)),
-             tx_bytes = GREATEST(tx_bytes, COALESCE($3::bigint, 0))
+             rx_bytes = GREATEST(rx_bytes, $2::bigint),
+             tx_bytes = GREATEST(tx_bytes, $3::bigint)
          WHERE id = $1`,
-        [peer.id, Number.isFinite(Number(rxBytes)) ? Number(rxBytes) : null, Number.isFinite(Number(txBytes)) ? Number(txBytes) : null]
+        [peer.id, safeRx, safeTx]
+      );
+      const dur = peer.last_connected_at
+        ? Math.max(0, Math.round((Date.now() - new Date(peer.last_connected_at).getTime()) / 1000))
+        : 0;
+      await pool.query(
+        `UPDATE connection_logs
+         SET disconnected_at = NOW(),
+             duration_seconds = $4,
+             rx_bytes = GREATEST(rx_bytes, $5::bigint),
+             tx_bytes = GREATEST(tx_bytes, $6::bigint),
+             disconnect_reason = COALESCE($7, 'user_disconnect')
+         WHERE id = (
+           SELECT id FROM connection_logs
+           WHERE user_id = $1 AND server_id = $2 AND client_public_key = $3 AND disconnected_at IS NULL
+           ORDER BY connected_at DESC
+           LIMIT 1
+         )`,
+        [req.auth.userId, peer.server_id, peer.client_public_key, dur, safeRx, safeTx, reason || 'user_disconnect']
       );
     }
 
@@ -282,12 +351,15 @@ router.post('/disconnect', requireAuth, async (req, res) => {
   } catch (err) {
     return res.status(500).json({ error: err.message || 'VPN disconnect failed' });
   }
-});
+}));
 
-// GET /api/v1/vpn/status
-router.get('/status', requireAuth, async (req, res) => {
+// GET /api/vpn/status
+router.get('/status', requireAuth, asyncHandler(async (req, res) => {
   const clientPublicKey = typeof req.query.clientPublicKey === 'string' ? req.query.clientPublicKey.trim() : null;
   const serverId = typeof req.query.serverId === 'string' ? req.query.serverId.trim() : null;
+  if (serverId && !isValidUuid(serverId)) {
+    return res.status(400).json({ error: 'Invalid serverId UUID' });
+  }
 
   try {
     const peerRes = await pool.query(
@@ -306,10 +378,7 @@ router.get('/status', requireAuth, async (req, res) => {
     );
 
     if (peerRes.rowCount === 0) {
-      return res.json({
-        connected: false,
-        status: 'disconnected'
-      });
+      return res.json({ connected: false, status: 'disconnected' });
     }
 
     const row = peerRes.rows[0];
@@ -361,9 +430,9 @@ router.get('/status', requireAuth, async (req, res) => {
   } catch (err) {
     return res.status(500).json({ error: err.message || 'Failed to read VPN status' });
   }
-});
+}));
 
-// GET & POST /api/v1/vpn/config
+// GET & POST /api/vpn/config
 async function handleConfigRequest(req, res) {
   const source = req.method === 'GET' ? req.query : req.body;
   const { serverId, nodeCode, clientPublicKey, format } = source || {};
@@ -373,12 +442,8 @@ async function handleConfigRequest(req, res) {
   }
 
   try {
-    let targetServerId = serverId;
-    if (!targetServerId && nodeCode) {
-      const lookup = await pool.query('SELECT id FROM vpn_servers WHERE node_code = $1', [String(nodeCode).toUpperCase()]);
-      if (lookup.rowCount === 0) return res.status(404).json({ error: 'Unknown GCC nodeCode' });
-      targetServerId = lookup.rows[0].id;
-    }
+    const targetServerId = await resolveServerId({ serverId, nodeCode });
+    if (!targetServerId) return res.status(404).json({ error: 'Unknown GCC nodeCode' });
 
     const result = await provisionAndSyncPeer({
       userId: req.auth.userId,
@@ -399,7 +464,7 @@ async function handleConfigRequest(req, res) {
   }
 }
 
-router.get('/config', requireAuth, handleConfigRequest);
-router.post('/config', requireAuth, handleConfigRequest);
+router.get('/config', requireAuth, asyncHandler(handleConfigRequest));
+router.post('/config', requireAuth, asyncHandler(handleConfigRequest));
 
 export default router;

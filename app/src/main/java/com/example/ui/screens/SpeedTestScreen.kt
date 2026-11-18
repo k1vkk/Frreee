@@ -271,13 +271,29 @@ fun SpeedTestScreen(
                             includeUpload = includeUpload
                         )
 
-                        if (progress.testServer.isNotBlank() || progress.dataUsedBytes > 0L) {
+                        if (progress.testServer.isNotBlank() || progress.dataUsedBytes > 0L || progress.provider.isNotBlank()) {
                             Spacer(modifier = Modifier.height(10.dp))
                             FlowRow(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
                                 verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = ObsidianSurface,
+                                    border = BorderStroke(1.dp, ElectricBlue.copy(alpha = 0.45f))
+                                ) {
+                                    Text(
+                                        text = if (progress.provider == "cloudflare_http") {
+                                            stringResource(R.string.label_engine_cloudflare)
+                                        } else {
+                                            stringResource(R.string.label_engine_speedofme)
+                                        },
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = NeonCyan,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
                                 if (progress.testServer.isNotBlank()) {
                                     Surface(
                                         shape = RoundedCornerShape(8.dp),

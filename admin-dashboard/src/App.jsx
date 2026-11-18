@@ -4,8 +4,10 @@ import {
   AlertTriangle,
   CheckCircle2,
   Database,
+  History,
   LogOut,
   Plus,
+  Power,
   RefreshCw,
   Server,
   Shield,
@@ -21,7 +23,7 @@ const COPY = {
     apiUrl: 'رابط Backend API (HTTPS)',
     email: 'بريد المشرف',
     password: 'كلمة المرور',
-    adminKey: 'أو مفتاح الإدارة (ADMIN_API_KEY)',
+    adminKey: 'أو مفتاح الإدارة (ADMIN_SECRET)',
     signIn: 'دخول لوحة التحكم',
     signOut: 'تسجيل الخروج',
     refresh: 'تحديث فوري',
@@ -34,23 +36,27 @@ const COPY = {
     unresolvedErrors: 'أخطاء قيد المتابعة',
     tabServers: 'السيرفرات وضغط الشبكة',
     tabUsers: 'المستخدمين والاشتراكات',
+    tabConnections: 'سجل الاتصالات',
     tabErrors: 'مراقبة الأخطاء',
     addServer: 'إضافة سيرفر WireGuard جديد',
     createServer: 'حفظ وتشغيل السيرفر',
+    enable: 'تفعيل',
+    disable: 'تعطيل',
     delete: 'حذف',
     searchUsers: 'بحث بالبريد أو الاسم...',
     resolve: 'تمت المعالجة',
     noErrors: 'لا توجد أخطاء مسجلة في PostgreSQL.',
     noUsers: 'لا يوجد مستخدمون مسجلون بعد.',
+    noConnections: 'لا توجد جلسات اتصال مسجلة في connection_logs.',
     langSwitch: 'English (LTR)'
   },
   en: {
     title: 'NEXORA VPN Control Center',
-    subtitle: 'Live WireGuard GCC Nodes, PostgreSQL Users, Billing & Error Telemetry',
+    subtitle: 'Live WireGuard GCC Nodes, PostgreSQL Users, Billing & Telemetry',
     apiUrl: 'Backend API Base URL (HTTPS)',
     email: 'Admin Email',
     password: 'Password',
-    adminKey: 'Or ADMIN_API_KEY',
+    adminKey: 'Or ADMIN_SECRET',
     signIn: 'Sign In to Dashboard',
     signOut: 'Sign Out',
     refresh: 'Refresh',
@@ -63,14 +69,18 @@ const COPY = {
     unresolvedErrors: 'Unresolved Errors',
     tabServers: 'Servers & Load',
     tabUsers: 'Users & Subscriptions',
+    tabConnections: 'Connection Logs',
     tabErrors: 'Error Monitor',
     addServer: 'Add New WireGuard Server',
     createServer: 'Create & Probe Server',
+    enable: 'Enable',
+    disable: 'Disable',
     delete: 'Delete',
     searchUsers: 'Search email or name...',
     resolve: 'Resolve',
     noErrors: 'No errors recorded in PostgreSQL.',
     noUsers: 'No registered users yet.',
+    noConnections: 'No VPN sessions logged yet.',
     langSwitch: 'العربية (RTL)'
   }
 };
@@ -91,6 +101,7 @@ export default function App() {
   const [overview, setOverview] = useState(null);
   const [servers, setServers] = useState([]);
   const [users, setUsers] = useState([]);
+  const [connections, setConnections] = useState([]);
   const [errors, setErrors] = useState([]);
   const [userSearch, setUserSearch] = useState('');
   const [busy, setBusy] = useState(false);
@@ -102,6 +113,8 @@ export default function App() {
     countryName: '',
     countryCode: '',
     city: '',
+    publicIp: '',
+    serverPort: 51820,
     endpoint: '',
     serverPublicKey: '',
     agentUrl: '',
@@ -124,15 +137,17 @@ export default function App() {
     setBannerError('');
     try {
       const creds = { token, adminKey };
-      const [ov, srv, usr, errRes] = await Promise.all([
+      const [ov, srv, usr, connRes, errRes] = await Promise.all([
         apiRequest(apiUrl, '/api/v1/admin/overview', creds),
         apiRequest(apiUrl, '/api/v1/admin/servers', creds),
         apiRequest(apiUrl, `/api/v1/admin/users?q=${encodeURIComponent(userSearch)}`, creds),
+        apiRequest(apiUrl, '/api/v1/admin/connections', creds),
         apiRequest(apiUrl, '/api/v1/admin/errors', creds)
       ]);
       setOverview(ov);
       setServers(srv.servers || []);
       setUsers(usr.users || []);
+      setConnections(connRes.connections || []);
       setErrors(errRes.errors || []);
     } catch (e) {
       setBannerError(e.message);
@@ -193,7 +208,11 @@ export default function App() {
         method: 'POST',
         token,
         adminKey,
-        body: { ...newNode, maxPeers: Number(newNode.maxPeers || 250) }
+        body: {
+          ...newNode,
+          serverPort: Number(newNode.serverPort || 51820),
+          maxPeers: Number(newNode.maxPeers || 250)
+        }
       });
       setNewNode({
         nodeCode: '',
@@ -201,6 +220,8 @@ export default function App() {
         countryName: '',
         countryCode: '',
         city: '',
+        publicIp: '',
+        serverPort: 51820,
         endpoint: '',
         serverPublicKey: '',
         agentUrl: '',
@@ -208,6 +229,20 @@ export default function App() {
         ipv6Subnet: 'fd80:4e58:5220::/64',
         tier: 'free',
         maxPeers: 250
+      });
+      await loadAll();
+    } catch (err) {
+      setBannerError(err.message);
+    }
+  }
+
+  async function handleToggleServerActive(server) {
+    try {
+      await apiRequest(apiUrl, `/api/v1/admin/servers/${server.id}`, {
+        method: 'PATCH',
+        token,
+        adminKey,
+        body: { isActive: !server.isActive }
       });
       await loadAll();
     } catch (err) {
@@ -407,6 +442,13 @@ export default function App() {
           {t.tabUsers}
         </button>
         <button
+          className={`btn ${activeTab === 'connections' ? 'btn-tab-active' : ''}`}
+          onClick={() => setActiveTab('connections')}
+        >
+          <History size={16} />
+          {t.tabConnections}
+        </button>
+        <button
           className={`btn ${activeTab === 'errors' ? 'btn-tab-active' : ''}`}
           onClick={() => setActiveTab('errors')}
         >
@@ -425,6 +467,8 @@ export default function App() {
               <input className="input" placeholder="Country (Saudi Arabia)" value={newNode.countryName} onChange={(e) => setNewNode({ ...newNode, countryName: e.target.value })} required />
               <input className="input" placeholder="ISO (SA)" maxLength={2} value={newNode.countryCode} onChange={(e) => setNewNode({ ...newNode, countryCode: e.target.value })} required />
               <input className="input" placeholder="City (Dammam)" value={newNode.city} onChange={(e) => setNewNode({ ...newNode, city: e.target.value })} required />
+              <input className="input mono" placeholder="Public IP (e.g. 203.0.113.10)" value={newNode.publicIp} onChange={(e) => setNewNode({ ...newNode, publicIp: e.target.value })} />
+              <input className="input mono" type="number" placeholder="WG Port (51820)" value={newNode.serverPort} onChange={(e) => setNewNode({ ...newNode, serverPort: e.target.value })} />
               <input className="input mono" placeholder="Endpoint (ip:51820)" value={newNode.endpoint} onChange={(e) => setNewNode({ ...newNode, endpoint: e.target.value })} />
               <input className="input mono" placeholder="Server Public Key" value={newNode.serverPublicKey} onChange={(e) => setNewNode({ ...newNode, serverPublicKey: e.target.value })} />
               <input className="input mono" placeholder="Agent URL (http://ip:51821)" value={newNode.agentUrl} onChange={(e) => setNewNode({ ...newNode, agentUrl: e.target.value })} />
@@ -452,6 +496,7 @@ export default function App() {
                   <th>Server</th>
                   <th>Status</th>
                   <th>Load</th>
+                  <th>CPU / RAM</th>
                   <th>Peers</th>
                   <th>Ping</th>
                   <th>Traffic (Rx / Tx)</th>
@@ -465,8 +510,8 @@ export default function App() {
                     <td className="mono" style={{ color: 'var(--cyan)', fontWeight: 700 }}>{s.nodeCode}</td>
                     <td>{s.countryName} • {s.name}</td>
                     <td>
-                      <span className={`badge ${s.healthStatus === 'online' ? 'badge-online' : s.healthStatus === 'pending_vps' ? 'badge-pending' : 'badge-offline'}`}>
-                        {s.healthStatus}
+                      <span className={`badge ${!s.isActive ? 'badge-offline' : s.healthStatus === 'online' ? 'badge-online' : s.healthStatus === 'pending_vps' ? 'badge-pending' : 'badge-offline'}`}>
+                        {!s.isActive ? 'disabled' : s.healthStatus}
                       </span>
                     </td>
                     <td>
@@ -475,11 +520,16 @@ export default function App() {
                       </span>
                       <span className="mono">{s.loadPercent}%</span>
                     </td>
+                    <td className="mono">{Number(s.cpuUsage || 0).toFixed(0)}% / {Number(s.ramUsage || 0).toFixed(0)}%</td>
                     <td className="mono">{s.connectedPeers} / {s.maxPeers}</td>
                     <td className="mono">{s.latencyMs ? `${s.latencyMs} ms` : '—'}</td>
                     <td className="mono">{formatBytes(s.totalRxBytes)} / {formatBytes(s.totalTxBytes)}</td>
                     <td className="mono">{s.endpoint || 'pending_vps'}</td>
-                    <td>
+                    <td style={{ display: 'flex', gap: 6 }}>
+                      <button className="btn" onClick={() => handleToggleServerActive(s)}>
+                        <Power size={14} />
+                        {s.isActive ? t.disable : t.enable}
+                      </button>
                       <button className="btn btn-danger" onClick={() => handleDeleteServer(s.id)}>
                         <Trash2 size={14} />
                         {t.delete}
@@ -546,6 +596,7 @@ export default function App() {
                           <option value="free">free</option>
                           <option value="pro_monthly">pro_monthly</option>
                           <option value="pro_annual">pro_annual</option>
+                          <option value="pro_premium">pro_premium</option>
                         </select>
                       </td>
                       <td className="mono">{u.activeConnections}</td>
@@ -569,6 +620,45 @@ export default function App() {
               </table>
             )}
           </div>
+        </div>
+      )}
+
+      {activeTab === 'connections' && (
+        <div className="card table-wrap">
+          {connections.length === 0 ? (
+            <div className="muted">{t.noConnections}</div>
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>User</th>
+                  <th>Node</th>
+                  <th>Assigned IPs</th>
+                  <th>Duration</th>
+                  <th>Traffic (Rx / Tx)</th>
+                  <th>Status / Reason</th>
+                  <th>Connected At</th>
+                </tr>
+              </thead>
+              <tbody>
+                {connections.map((c) => (
+                  <tr key={c.id}>
+                    <td>{c.userEmail}</td>
+                    <td className="mono" style={{ color: 'var(--cyan)' }}>{c.nodeCode}</td>
+                    <td className="mono">{c.assignedIpv4 || '—'}</td>
+                    <td className="mono">{c.durationSeconds}s</td>
+                    <td className="mono">{formatBytes(c.rxBytes)} / {formatBytes(c.txBytes)}</td>
+                    <td>
+                      <span className={`badge ${c.disconnectReason === 'active' ? 'badge-online' : 'badge-pending'}`}>
+                        {c.disconnectReason}
+                      </span>
+                    </td>
+                    <td className="mono">{new Date(c.connectedAt).toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       )}
 

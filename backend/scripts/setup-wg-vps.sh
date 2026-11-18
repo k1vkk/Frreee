@@ -2,10 +2,10 @@
 set -euo pipefail
 
 # NEXORA VPN - Real WireGuard IPv4+IPv6 VPS Provisioning Script (Ubuntu / Debian)
-# Includes TCP BBR throughput optimization, firewall rules, and systemd node-agent service.
+# Includes umask 077 key generation, TCP BBR tuning, firewall rules, and systemd node-agent service.
 # Usage:
 #   sudo NODE_CODE=SA01 SUBNET_V4=10.8.1.1/24 SUBNET_V6=fd80:4e58:5201::1/64 \
-#     CONTROL_PLANE_URL=https://api.yourdomain.com ADMIN_API_KEY=your_admin_key \
+#     CONTROL_PLANE_URL=https://api.yourdomain.com ADMIN_SECRET=your_admin_secret \
 #     NODE_AGENT_SECRET=your_agent_secret bash setup-wg-vps.sh
 
 NODE_CODE="${NODE_CODE:?Set NODE_CODE (e.g. SA01, SA02, AE01, AE02, BH01, QA01, KW01, OM01)}"
@@ -14,6 +14,7 @@ SUBNET_V6="${SUBNET_V6:-fd80:4e58:5201::1/64}"
 WG_PORT="${WG_PORT:-51820}"
 AGENT_PORT="${AGENT_PORT:-51821}"
 NODE_AGENT_SECRET="${NODE_AGENT_SECRET:?Set NODE_AGENT_SECRET}"
+ADMIN_SECRET="${ADMIN_SECRET:-${ADMIN_API_KEY:-}}"
 CONTROL_PLANE_IP="${CONTROL_PLANE_IP:-}"
 PUBLIC_IP="$(curl -4 -s https://api.ipify.org)"
 WAN_IFACE="$(ip route show default | awk '/default/ {print $5; exit}')"
@@ -36,13 +37,16 @@ sysctl --system
 mkdir -p /etc/wireguard
 chmod 700 /etc/wireguard
 
-if [ ! -f /etc/wireguard/privatekey ]; then
-  wg genkey | tee /etc/wireguard/privatekey | wg pubkey > /etc/wireguard/publickey
-  chmod 600 /etc/wireguard/privatekey
+if [ ! -f /etc/wireguard/server_private.key ]; then
+  (
+    umask 077
+    wg genkey | tee /etc/wireguard/server_private.key | wg pubkey > /etc/wireguard/server_public.key
+  )
+  chmod 600 /etc/wireguard/server_private.key
 fi
 
-PRIV_KEY="$(cat /etc/wireguard/privatekey)"
-PUB_KEY="$(cat /etc/wireguard/publickey)"
+PRIV_KEY="$(cat /etc/wireguard/server_private.key)"
+PUB_KEY="$(cat /etc/wireguard/server_public.key)"
 
 cat > /etc/wireguard/wg0.conf <<EOF
 [Interface]
@@ -54,6 +58,7 @@ SaveConfig = false
 PostUp = iptables -A FORWARD -i %i -j ACCEPT; iptables -t nat -A POSTROUTING -o ${WAN_IFACE} -j MASQUERADE; ip6tables -A FORWARD -i %i -j ACCEPT; ip6tables -t nat -A POSTROUTING -o ${WAN_IFACE} -j MASQUERADE
 PostDown = iptables -D FORWARD -i %i -j ACCEPT; iptables -t nat -D POSTROUTING -o ${WAN_IFACE} -j MASQUERADE; ip6tables -D FORWARD -i %i -j ACCEPT; ip6tables -t nat -D POSTROUTING -o ${WAN_IFACE} -j MASQUERADE
 EOF
+chmod 600 /etc/wireguard/wg0.conf
 
 systemctl enable wg-quick@wg0
 systemctl restart wg-quick@wg0
@@ -91,11 +96,12 @@ systemctl daemon-reload
 systemctl enable nexora-node-agent
 systemctl restart nexora-node-agent
 
-if [ -n "${CONTROL_PLANE_URL:-}" ] && [ -n "${ADMIN_API_KEY:-}" ]; then
-  curl -fsS -X POST "${CONTROL_PLANE_URL%/}/api/v1/admin/nodes/${NODE_CODE}/activate" \
+if [ -n "${CONTROL_PLANE_URL:-}" ] && [ -n "${ADMIN_SECRET}" ]; then
+  curl -fsS -X POST "${CONTROL_PLANE_URL%/}/api/admin/nodes/${NODE_CODE}/activate" \
     -H "Content-Type: application/json" \
-    -H "x-admin-key: ${ADMIN_API_KEY}" \
-    -d "{\"endpoint\":\"${PUBLIC_IP}:${WG_PORT}\",\"serverPublicKey\":\"${PUB_KEY}\",\"agentUrl\":\"http://${PUBLIC_IP}:${AGENT_PORT}\"}"
+    -H "x-admin-key: ${ADMIN_SECRET}" \
+    -d "{\"publicIp\":\"${PUBLIC_IP}\",\"serverPort\":${WG_PORT},\"endpoint\":\"${PUBLIC_IP}:${WG_PORT}\",\"serverPublicKey\":\"${PUB_KEY}\",\"agentUrl\":\"http://${PUBLIC_IP}:${AGENT_PORT}\"}"
 fi
 
-echo "Provisioned ${NODE_CODE} at ${PUBLIC_IP}:${WG_PORT} (BBR + IPv4/IPv6 + systemd node-agent active)"
+echo "Provisioned ${NODE_CODE} at ${PUBLIC_IP}:${WG_PORT}"
+echo "Server Public Key: ${PUB_KEY}"

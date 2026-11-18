@@ -1,13 +1,19 @@
 import http from 'node:http';
+import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 const PORT = Number(process.env.NODE_AGENT_PORT || 51821);
-const SECRET = process.env.NODE_AGENT_SECRET || '';
+const SECRET = (process.env.NODE_AGENT_SECRET || '').trim();
 const WG_IFACE = process.env.WG_INTERFACE || 'wg0';
 
-function isValidWgKey(key) {
+if (!SECRET || SECRET.startsWith('REPLACE_WITH_')) {
+  console.error('FATAL: NODE_AGENT_SECRET must be configured before starting nexora-node-agent.');
+  process.exit(1);
+}
+
+export function isValidWgKey(key) {
   return typeof key === 'string' && /^[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=$/.test(key.trim());
 }
 
@@ -22,30 +28,52 @@ async function readBody(req) {
   return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
 }
 
-function parseWgDump(stdout) {
+function sampleCpuPercent() {
+  const cpus = os.cpus() || [];
+  if (cpus.length === 0) return 0;
+  const load1m = os.loadavg()[0] || 0;
+  return Math.min(100, Math.round(((load1m / cpus.length) * 100) * 10) / 10);
+}
+
+function sampleRamPercent() {
+  const total = os.totalmem() || 1;
+  const free = os.freemem();
+  return Math.min(100, Math.round(((total - free) / total) * 1000) / 10);
+}
+
+export function parseWgDump(stdout) {
   const lines = stdout.trim().split('\n').filter(Boolean);
   const ifaceParts = (lines[0] || '').split('\t');
+  let totalRxBytes = 0;
+  let totalTxBytes = 0;
   const peers = lines.slice(1).map((line) => {
     const parts = line.split('\t');
     const latestHandshakeSec = Number(parts[4] || 0);
+    const rxBytes = Number(parts[5] || 0);
+    const txBytes = Number(parts[6] || 0);
+    totalRxBytes += rxBytes;
+    totalTxBytes += txBytes;
     return {
       publicKey: parts[0] || '',
       endpoint: parts[2] && parts[2] !== '(none)' ? parts[2] : null,
       allowedIps: parts[3] || '',
       latestHandshakeAt: latestHandshakeSec > 0 ? new Date(latestHandshakeSec * 1000).toISOString() : null,
-      rxBytes: Number(parts[5] || 0),
-      txBytes: Number(parts[6] || 0)
+      rxBytes,
+      txBytes
     };
   });
   return {
     publicKey: ifaceParts[1] || '',
     listenPort: Number(ifaceParts[2] || 51820),
+    activePeers: peers.length,
+    totalRxBytes,
+    totalTxBytes,
     peers
   };
 }
 
 const server = http.createServer(async (req, res) => {
-  if (SECRET && req.headers['x-agent-secret'] !== SECRET) {
+  if (req.headers['x-agent-secret'] !== SECRET) {
     return sendJson(res, 403, { error: 'Forbidden' });
   }
 
@@ -58,7 +86,12 @@ const server = http.createServer(async (req, res) => {
         interface: WG_IFACE,
         publicKey: parsed.publicKey,
         listenPort: parsed.listenPort,
-        activePeers: parsed.peers.length
+        activePeers: parsed.activePeers,
+        rxBytes: parsed.totalRxBytes,
+        txBytes: parsed.totalTxBytes,
+        cpuUsage: sampleCpuPercent(),
+        ramUsage: sampleRamPercent(),
+        uptimeSeconds: Math.round(os.uptime())
       });
     }
 

@@ -7,7 +7,6 @@ import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.NexoraApp
-import com.example.NexoraConfig
 import com.example.R
 import com.example.billing.BillingUiState
 import com.example.data.local.ServerProfileEntity
@@ -66,11 +65,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val saved = if (prefs.selectedServerId.isNotBlank()) {
                     serverDao.getServerById(prefs.selectedServerId)
                 } else {
-                    serverDao.observeServers().first().firstOrNull { it.healthStatus != "offline" }
+                    serverDao.observeServers().first().firstOrNull {
+                        it.healthStatus != "offline" && it.healthStatus != "pending_vps" && it.endpoint.contains(":")
+                    }
                 }
-                if (saved != null && saved.healthStatus != "offline" && vpnController.prepareVpnIntent() == null) {
+                if (saved != null &&
+                    saved.healthStatus != "offline" &&
+                    saved.healthStatus != "pending_vps" &&
+                    saved.endpoint.contains(":") &&
+                    vpnController.prepareVpnIntent() == null
+                ) {
                     vpnController.connect(saved)
                 }
+            }
+        }
+    }
+
+    fun syncServers() {
+        viewModelScope.launch {
+            vpnController.syncServersFromBackend().onFailure { err ->
+                _uiMessage.value = err.localizedMessage ?: app.getString(R.string.servers_empty_body)
             }
         }
     }
@@ -85,7 +99,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     vpnController.disconnect()
                 }
                 else -> {
-                    val target = current.activeServer ?: servers.value.firstOrNull { it.healthStatus != "offline" }
+                    val target = current.activeServer?.takeIf {
+                        it.healthStatus != "offline" && it.healthStatus != "pending_vps" && it.endpoint.contains(":")
+                    } ?: servers.value.firstOrNull {
+                        it.healthStatus != "offline" && it.healthStatus != "pending_vps" && it.endpoint.contains(":")
+                    }
                     if (target != null) {
                         connectToServer(target)
                     } else {
@@ -129,8 +147,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun connectToServer(server: ServerProfileEntity) {
         viewModelScope.launch {
-            val bypassVpnDialogForDemo = NexoraConfig.IS_LOCAL_DEMO_MODE && server.sourceType == "BACKEND"
-            val prepareIntent = if (bypassVpnDialogForDemo) null else vpnController.prepareVpnIntent()
+            val prepareIntent = vpnController.prepareVpnIntent()
             if (prepareIntent != null) {
                 pendingServerToConnect = server
                 _vpnPermissionRequest.emit(prepareIntent)

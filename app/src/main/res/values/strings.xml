@@ -236,4 +236,74 @@
     <string name="vpn_notification_stats">↓ %1$s  •  ↑ %2$s  •  %3$s</string>
     <string name="error_vpn_permission_denied">VPN permission was not granted by the system.</string>
     <string name="error_invalid_url">Please enter a valid production https:// URL.</string>
+
+    <!-- Additional 10-Screen Navigation & Tools -->
+    <string name="nav_status">Tunnel Status</string>
+    <string name="nav_ping">Ping Test</string>
+    <string name="nav_history">History</string>
+    <string name="nav_support">Support</string>
+    <string name="quick_tools_title">Network &amp; Security Tools</string>
+    <string name="action_back">Back</string>
+
+    <!-- Pro Premium Tier & Extended WireGuard Toggles -->
+    <string name="plan_pro_premium_title">NEXORA Pro Premium</string>
+    <string name="plan_pro_premium_desc">Dedicated priority GCC routing, multi-region failover, and up to 10 active WireGuard keys.</string>
+    <string name="toggle_auto_failover">Auto-Failover to next healthy node on tunnel error</string>
+    <string name="toggle_ipv6_leak_protection">IPv6 Leak Shield (Route ::/0 inside tunnel)</string>
+    <string name="label_engine_speedofme">Engine: SpeedOf.Me JS API</string>
+    <string name="label_engine_cloudflare">Engine: Cloudflare Edge HTTPS</string>
+    <string name="label_server_telemetry">CPU %1$d%% • RAM %2$d%% • %3$d active</string>
+    <string name="label_gcc_slots_title">GCC Infrastructure Status (%1$d/%2$d Online)</string>
+    <string name="label_pending_vps">Pending VPS Provisioning</string>
+
+    <!-- Connection Status Screen (Screen 3) -->
+    <string name="conn_status_title">Real-Time Connection Status</string>
+    <string name="conn_status_subtitle">Live WireGuard GoBackend interface telemetry &amp; leak inspection</string>
+    <string name="conn_no_tunnel">No active WireGuard tunnel right now.</string>
+    <string name="conn_ipv4_assigned">Assigned Tunnel IPv4</string>
+    <string name="conn_ipv6_assigned">Assigned Tunnel IPv6</string>
+    <string name="conn_active_dns">Enforced Tunnel DNS</string>
+    <string name="conn_ipv4_tunnel">IPv4 Tunnel Active</string>
+    <string name="conn_ipv6_tunnel">IPv6 Dual-Stack Active</string>
+    <string name="conn_rx_tx_totals">Session Transfer (RX / TX)</string>
+    <string name="conn_server_load">Node Load / Telemetry</string>
+    <string name="action_disconnect_now">Disconnect Tunnel</string>
+    <string name="action_reconnect_now">Reconnect</string>
+
+    <!-- Ping Test Screen (Screen 5) -->
+    <string name="ping_test_title">GCC &amp; Endpoint Ping Diagnostics</string>
+    <string name="ping_test_subtitle">Real multi-sample TCP/ICMP RTT, Jitter, and Packet Loss measurements</string>
+    <string name="ping_custom_hint">Host or endpoint (e.g. 1.1.1.1:443)</string>
+    <string name="action_probe_host">Run 4-Sample Probe</string>
+    <string name="label_jitter_ms">Jitter: %1$d ms</string>
+    <string name="label_packet_loss">Loss: %1$d%%</string>
+    <string name="label_probe_samples">%1$d/%2$d samples</string>
+    <string name="ping_pending_vps_note">Provision this GCC VPS using backend/scripts/setup-wg-vps.sh to enable live probing.</string>
+
+    <!-- Connection History Screen (Screen 6) -->
+    <string name="conn_history_title">Tunnel Connection History</string>
+    <string name="conn_history_subtitle">Recorded WireGuard sessions stored locally in encrypted device database</string>
+    <string name="conn_history_empty">No WireGuard tunnel sessions have been recorded yet.</string>
+    <string name="conn_history_duration">Duration: %1$s</string>
+    <string name="conn_history_transfer">↓ %1$s  •  ↑ %2$s</string>
+
+    <!-- Support Center Screen (Screen 10) -->
+    <string name="support_title">Support &amp; Diagnostics Center</string>
+    <string name="support_subtitle">Live system readiness checks, WireGuard guides, and support tickets</string>
+    <string name="support_diag_title">Live System Readiness Audit</string>
+    <string name="action_copy_diag">Copy Diagnostics Bundle</string>
+    <string name="diag_copied_msg">Diagnostics bundle copied to clipboard</string>
+    <string name="support_faq_title">Setup &amp; Troubleshooting FAQ</string>
+    <string name="faq_q1">Why are GCC servers marked Pending VPS?</string>
+    <string name="faq_a1">NEXORA never fakes servers or IPs. Each GCC city slot (SA01–OM01) stays Pending VPS until you run setup-wg-vps.sh on a real Linux VPS and register its node agent with PostgreSQL.</string>
+    <string name="faq_q2">How do I connect a private WireGuard server without the backend?</string>
+    <string name="faq_a2">Tap Import .conf or Manual Config in the Servers tab to import any standard WireGuard configuration file directly into GoBackend.</string>
+    <string name="faq_q3">How does Speed Test work without SpeedOf.Me API keys?</string>
+    <string name="faq_a3">When SpeedOf.Me credentials are configured, NEXORA runs the official SpeedOf.Me JS engine. If unconfigured, it automatically runs real multi-megabyte HTTPS probes against Cloudflare Edge.</string>
+    <string name="support_ticket_title">Submit Support Ticket</string>
+    <string name="support_sign_in_hint">Sign in on the Account screen to submit and track tickets in PostgreSQL.</string>
+    <string name="field_ticket_subject">Subject</string>
+    <string name="field_ticket_message">Describe the issue or node ID</string>
+    <string name="action_submit_ticket">Submit Ticket</string>
+    <string name="support_my_tickets">Your Recent Tickets</string>
 </resources>

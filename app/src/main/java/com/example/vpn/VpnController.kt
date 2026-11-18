@@ -9,8 +9,8 @@ import android.net.NetworkRequest
 import android.net.VpnService
 import android.os.Build
 import android.os.PowerManager
-import com.example.NexoraConfig
-import com.example.data.local.LocalDemoFixtures
+import com.example.data.local.ConnectionHistoryDao
+import com.example.data.local.ConnectionHistoryEntity
 import com.example.data.local.ServerProfileDao
 import com.example.data.local.ServerProfileEntity
 import com.example.data.local.UserPreferencesRepository
@@ -69,6 +69,7 @@ data class VpnSessionState(
     val sessionRxBytes: Long = 0L,
     val sessionTxBytes: Long = 0L,
     val pingMs: Int? = null,
+    val lastHandshakeAgeSec: Long? = null,
     val durationSeconds: Long = 0L,
     val errorMessage: String? = null
 )
@@ -77,6 +78,7 @@ class VpnController(
     private val appContext: Context,
     private val prefsRepo: UserPreferencesRepository,
     private val serverDao: ServerProfileDao,
+    private val connectionHistoryDao: ConnectionHistoryDao,
     private val apiClient: NexoraApiClient,
     private val diagnostics: NetworkDiagnostics
 ) {
@@ -94,12 +96,12 @@ class VpnController(
     private var telemetryJob: Job? = null
     private var reconnectJob: Job? = null
     private var connectedAtMs: Long = 0L
+    private var activeHistoryRowId: Long? = null
     private var lastRxBytes: Long = 0L
     private var lastTxBytes: Long = 0L
+    private var consecutiveStaleTicks: Int = 0
     @Volatile
     private var userRequestedDisconnect: Boolean = true
-    @Volatile
-    private var isDemoTunnelActive: Boolean = false
 
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
@@ -167,71 +169,63 @@ class VpnController(
             countryName = countryName,
             countryCode = countryCode,
             city = city,
-            endpoint = endpoint,
-            serverPublicKey = serverPublicKey,
+            publicIp = publicIp ?: endpoint?.substringBefore(':').orEmpty(),
+            serverPort = serverPort,
+            endpoint = endpoint.orEmpty(),
+            serverPublicKey = serverPublicKey.orEmpty(),
             dnsServers = dnsServers,
             tier = tier,
             loadPercent = loadPercent,
+            cpuUsage = cpuUsage,
+            ramUsage = ramUsage,
+            networkTrafficBytes = networkTrafficBytes,
+            activeUsers = activeUsers,
             sourceType = "BACKEND",
             healthStatus = healthStatus,
             lastPingMs = latencyMs,
+            lastJitterMs = jitterMs,
+            packetLossPercent = packetLossPercent,
             lastHealthCheckAt = lastHealthCheckAt,
             isFavorite = isFavorite
         )
 
     suspend fun syncServersFromBackend(): Result<List<ServerProfileEntity>> {
-        val service = apiClient.createService(NexoraConfig.NEXORA_API_BASE_URL)
-        if (service != null) {
-            try {
-                val response = withContext(Dispatchers.IO) { service.getServers() }
-                if (response.isSuccessful && response.body() != null) {
-                    val existingFavs = serverDao.observeServers().first().associate { it.id to it.isFavorite }
-                    val entities = response.body()!!.servers.map { dto ->
-                        dto.toEntity(isFavorite = existingFavs[dto.id] ?: false)
-                    }
-                    if (entities.isEmpty()) {
-                        serverDao.deleteAllBackendServers()
-                    } else {
-                        serverDao.upsertAll(entities)
-                        serverDao.deleteStaleBackendServers(entities.map { it.id })
-                        if (_state.value.activeServer == null) {
-                            val savedId = prefsRepo.preferencesFlow.first().selectedServerId
-                            val picked = entities.firstOrNull { it.id == savedId } ?: entities.first()
-                            prefsRepo.setSelectedServerId(picked.id)
-                            _state.update { it.copy(activeServer = picked) }
-                        }
-                    }
-                    return Result.success(entities)
-                } else if (!NexoraConfig.IS_LOCAL_DEMO_MODE) {
-                    return Result.failure(IllegalStateException("Backend returned HTTP ${response.code()}"))
-                }
-            } catch (e: Exception) {
-                if (!NexoraConfig.IS_LOCAL_DEMO_MODE) {
-                    return Result.failure(e)
-                }
-            }
-        } else if (!NexoraConfig.IS_LOCAL_DEMO_MODE) {
-            return Result.failure(
-                IllegalStateException("NEXORA_API_BASE_URL is not configured with a valid reachable HTTPS domain (${NexoraConfig.NEXORA_API_BASE_URL}).")
+        val prefs = prefsRepo.preferencesFlow.first()
+        val service = apiClient.createService(prefs.apiBaseUrl)
+            ?: return Result.failure(
+                IllegalStateException("Backend HTTPS API URL is not configured. Open Settings to set your deployed Node.js API URL.")
             )
+        return try {
+            val response = withContext(Dispatchers.IO) { service.getServers() }
+            if (response.isSuccessful && response.body() != null) {
+                val existingFavs = serverDao.observeServers().first().associate { it.id to it.isFavorite }
+                val entities = response.body()!!.servers.map { dto ->
+                    dto.toEntity(isFavorite = existingFavs[dto.id] ?: false)
+                }
+                if (entities.isEmpty()) {
+                    serverDao.deleteAllBackendServers()
+                } else {
+                    serverDao.upsertAll(entities)
+                    serverDao.deleteStaleBackendServers(entities.map { it.id })
+                    if (_state.value.activeServer == null) {
+                        val savedId = prefs.selectedServerId
+                        val picked = entities.firstOrNull { it.id == savedId } ?: entities.first()
+                        prefsRepo.setSelectedServerId(picked.id)
+                        _state.update { it.copy(activeServer = picked) }
+                    }
+                }
+                Result.success(entities)
+            } else {
+                Result.failure(IllegalStateException("Backend returned HTTP ${response.code()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
         }
-
-        // Local/Demo Mode fallback: load GCC preview nodes into Room seamlessly
-        val existingFavs = serverDao.observeServers().first().associate { it.id to it.isFavorite }
-        val demoEntities = LocalDemoFixtures.gccDemoServers(existingFavs)
-        serverDao.upsertAll(demoEntities)
-        serverDao.deleteStaleBackendServers(demoEntities.map { it.id })
-        if (_state.value.activeServer == null) {
-            val savedId = prefsRepo.preferencesFlow.first().selectedServerId
-            val picked = demoEntities.firstOrNull { it.id == savedId } ?: demoEntities.first()
-            prefsRepo.setSelectedServerId(picked.id)
-            _state.update { it.copy(activeServer = picked) }
-        }
-        return Result.success(demoEntities)
     }
 
     suspend fun fetchBestOnlineServer(): Result<ServerProfileEntity> {
-        val service = apiClient.createService(NexoraConfig.NEXORA_API_BASE_URL)
+        val prefs = prefsRepo.preferencesFlow.first()
+        val service = apiClient.createService(prefs.apiBaseUrl)
         if (service != null) {
             try {
                 val bestRes = withContext(Dispatchers.IO) { service.getBestServer() }
@@ -241,15 +235,12 @@ class VpnController(
                     serverDao.upsert(entity)
                     return Result.success(entity)
                 }
-            } catch (e: Exception) {
-                if (!NexoraConfig.IS_LOCAL_DEMO_MODE) {
-                    return Result.failure(e)
-                }
+            } catch (_: Exception) {
             }
         }
         val synced = syncServersFromBackend().getOrElse { return Result.failure(it) }
-        val candidate = synced.firstOrNull { it.healthStatus != "offline" }
-            ?: return Result.failure(IllegalStateException("No online WireGuard servers available on backend."))
+        val candidate = synced.firstOrNull { it.healthStatus == "online" && it.endpoint.isNotBlank() }
+            ?: return Result.failure(IllegalStateException("No live online WireGuard VPS servers available right now."))
         return Result.success(candidate)
     }
 
@@ -274,11 +265,6 @@ class VpnController(
         if (_state.value.status != VpnConnectionStatus.CONNECTED &&
             _state.value.status != VpnConnectionStatus.CONNECTING
         ) return null
-        if (isDemoTunnelActive) {
-            val demoIp = _state.value.activeServer?.endpoint?.substringBefore(':') ?: "185.199.108.153"
-            _state.update { it.copy(tunnelIp = demoIp, isCheckingTunnelIp = false) }
-            return demoIp
-        }
         _state.update { it.copy(isCheckingTunnelIp = true) }
         val prefs = prefsRepo.preferencesFlow.first()
         val res = withContext(Dispatchers.IO) {
@@ -300,17 +286,27 @@ class VpnController(
     }
 
     suspend fun findBestServerByPing(servers: List<ServerProfileEntity>): ServerProfileEntity? {
-        val candidates = servers.filter { it.healthStatus != "offline" }
+        val candidates = servers.filter {
+            it.healthStatus != "offline" && it.healthStatus != "pending_vps" && it.endpoint.contains(":")
+        }
         if (candidates.isEmpty()) return null
         _state.update { it.copy(isFindingBestServer = true) }
         return try {
             val measured = coroutineScope {
                 candidates.map { srv ->
                     async {
-                        val ms = diagnostics.measureTcpPing(srv.endpoint, 2200)
-                        val effectiveMs = ms ?: if (NexoraConfig.IS_LOCAL_DEMO_MODE) srv.lastPingMs else null
-                        serverDao.updatePing(srv.id, effectiveMs)
-                        srv.copy(lastPingMs = effectiveMs) to effectiveMs
+                        val probe = diagnostics.measureServerProbe(srv.endpoint, samples = 3, timeoutMs = 2000)
+                        serverDao.updateDiagnostics(
+                            id = srv.id,
+                            pingMs = probe.pingMs,
+                            jitterMs = probe.jitterMs,
+                            lossPercent = probe.packetLossPercent
+                        )
+                        srv.copy(
+                            lastPingMs = probe.pingMs,
+                            lastJitterMs = probe.jitterMs,
+                            packetLossPercent = probe.packetLossPercent
+                        ) to probe.pingMs
                     }
                 }.awaitAll()
             }
@@ -338,29 +334,27 @@ class VpnController(
             }
         }
 
-        if (target.healthStatus == "offline") {
+        if (target.healthStatus == "offline" || target.healthStatus == "pending_vps" || !target.endpoint.contains(":")) {
             _state.update {
                 it.copy(
                     status = VpnConnectionStatus.ERROR,
-                    errorMessage = "${target.name} is currently offline."
+                    errorMessage = "${target.name} is not online or lacks a provisioned WireGuard endpoint."
                 )
             }
             return
         }
 
-        val useDemoSimulation = NexoraConfig.IS_LOCAL_DEMO_MODE && target.sourceType == "BACKEND"
-        if (!useDemoSimulation && prepareVpnIntent() != null) {
+        if (prepareVpnIntent() != null) {
             _state.update {
                 it.copy(
                     status = VpnConnectionStatus.ERROR,
-                    errorMessage = "System VPN permission required."
+                    errorMessage = "Android VPN permission is required before opening a WireGuard tunnel."
                 )
             }
             return
         }
 
         userRequestedDisconnect = false
-        isDemoTunnelActive = false
         reconnectJob?.cancel()
         prefsRepo.setSelectedServerId(target.id)
         _state.update {
@@ -374,6 +368,7 @@ class VpnController(
                 sessionRxBytes = 0L,
                 sessionTxBytes = 0L,
                 durationSeconds = 0L,
+                lastHandshakeAgeSec = null,
                 isDnsLeakProtected = false
             )
         }
@@ -387,93 +382,48 @@ class VpnController(
             val (privKey, pubKey) = prefsRepo.ensureWireGuardKeyPair()
 
             var wgQuickFromBackend: String? = null
-            var remoteProvisioned = false
             val effectiveProfile = if (target.sourceType == "BACKEND") {
-                val service = apiClient.createService(NexoraConfig.NEXORA_API_BASE_URL)
-                if (service != null && prefs.authToken.isNotBlank()) {
-                    try {
-                        val provisionRes = withContext(Dispatchers.IO) {
-                            service.vpnConnect(
-                                bearer = "Bearer ${prefs.authToken}",
-                                body = ProvisionRequest(serverId = target.id, clientPublicKey = pubKey)
-                            )
-                        }
-                        if (provisionRes.isSuccessful && provisionRes.body() != null) {
-                            var provisioned = provisionRes.body()!!
-                            if (provisioned.wgQuickConfig.isNullOrBlank()) {
-                                val configRes = withContext(Dispatchers.IO) {
-                                    service.getVpnConfig(
-                                        bearer = "Bearer ${prefs.authToken}",
-                                        serverId = target.id,
-                                        clientPublicKey = pubKey
-                                    )
-                                }
-                                if (configRes.isSuccessful && configRes.body() != null) {
-                                    provisioned = configRes.body()!!
-                                }
-                            }
-                            wgQuickFromBackend = provisioned.wgQuickConfig
-                            remoteProvisioned = true
-                            val v4 = provisioned.assignedIpv4 ?: provisioned.assignedAddress.substringBefore(',').trim()
-                            val v6 = provisioned.assignedIpv6 ?: provisioned.assignedAddress.substringAfter(',', "").trim()
-                                .ifBlank { "fd80:4e58:5200::2/128" }
-                            target.copy(
-                                endpoint = provisioned.endpoint,
-                                serverPublicKey = provisioned.serverPublicKey,
-                                dnsServers = provisioned.dnsServers,
-                                assignedAddress = v4,
-                                assignedIpv6 = v6,
-                                allowedIps = provisioned.allowedIps
-                            )
-                        } else if (NexoraConfig.IS_LOCAL_DEMO_MODE) {
-                            target
-                        } else {
-                            throw IllegalStateException("Peer provisioning failed (HTTP ${provisionRes.code()})")
-                        }
-                    } catch (e: Exception) {
-                        if (NexoraConfig.IS_LOCAL_DEMO_MODE) {
-                            target
-                        } else {
-                            throw e
-                        }
-                    }
-                } else if (NexoraConfig.IS_LOCAL_DEMO_MODE) {
-                    target
-                } else {
-                    if (service == null) {
-                        throw IllegalStateException("Invalid embedded backend URL (${NexoraConfig.NEXORA_API_BASE_URL}).")
-                    }
-                    throw IllegalStateException("Sign in to your account to generate your encrypted WireGuard config automatically.")
+                val service = apiClient.createService(prefs.apiBaseUrl)
+                    ?: throw IllegalStateException("Backend HTTPS API URL is not configured (${prefs.apiBaseUrl.ifBlank { "empty" }}).")
+                if (prefs.authToken.isBlank()) {
+                    throw IllegalStateException("Sign in to your NEXORA account first to provision your WireGuard peer key.")
                 }
-            } else {
-                target
-            }
-
-            if (NexoraConfig.IS_LOCAL_DEMO_MODE && !remoteProvisioned && effectiveProfile.sourceType == "BACKEND") {
-                delay(550L)
-                if (userRequestedDisconnect) return
-                isDemoTunnelActive = true
-                connectedAtMs = System.currentTimeMillis()
-                lastRxBytes = 0L
-                lastTxBytes = 0L
-                val demoTunnelIp = effectiveProfile.endpoint.substringBefore(':')
-                val dnsList = prefs.customDns.split(',').map { it.trim() }.filter { it.isNotEmpty() }
-                _state.update {
-                    it.copy(
-                        status = VpnConnectionStatus.CONNECTED,
-                        activeServer = effectiveProfile,
-                        tunnelIp = demoTunnelIp,
-                        tunnelIpv4Assigned = effectiveProfile.assignedAddress,
-                        tunnelIpv6Assigned = effectiveProfile.assignedIpv6,
-                        activeDnsServers = dnsList,
-                        isDnsLeakProtected = prefs.dnsLeakProtectionEnabled && dnsList.isNotEmpty(),
-                        isIpv4Active = true,
-                        isIpv6Active = true,
-                        pingMs = effectiveProfile.lastPingMs ?: 26
+                val provisionRes = withContext(Dispatchers.IO) {
+                    service.vpnConnect(
+                        bearer = "Bearer ${prefs.authToken}",
+                        body = ProvisionRequest(serverId = target.id, clientPublicKey = pubKey)
                     )
                 }
-                startTelemetryLoop(effectiveProfile, prefs.dnsLeakProtectionEnabled)
-                return
+                if (!provisionRes.isSuccessful || provisionRes.body() == null) {
+                    throw IllegalStateException("WireGuard peer provisioning failed (HTTP ${provisionRes.code()})")
+                }
+                var provisioned = provisionRes.body()!!
+                if (provisioned.wgQuickConfig.isNullOrBlank()) {
+                    val configRes = withContext(Dispatchers.IO) {
+                        service.getVpnConfig(
+                            bearer = "Bearer ${prefs.authToken}",
+                            serverId = target.id,
+                            clientPublicKey = pubKey
+                        )
+                    }
+                    if (configRes.isSuccessful && configRes.body() != null) {
+                        provisioned = configRes.body()!!
+                    }
+                }
+                wgQuickFromBackend = provisioned.wgQuickConfig
+                val v4 = provisioned.assignedIpv4 ?: provisioned.assignedAddress.substringBefore(',').trim()
+                val v6 = provisioned.assignedIpv6 ?: provisioned.assignedAddress.substringAfter(',', "").trim()
+                    .ifBlank { "fd80:4e58:5200::2/128" }
+                target.copy(
+                    endpoint = provisioned.endpoint,
+                    serverPublicKey = provisioned.serverPublicKey,
+                    dnsServers = provisioned.dnsServers,
+                    assignedAddress = v4,
+                    assignedIpv6 = v6,
+                    allowedIps = provisioned.allowedIps
+                )
+            } else {
+                target
             }
 
             val wgConfig = WireGuardConfigHelper.buildWireGuardConfig(
@@ -483,6 +433,7 @@ class VpnController(
                 assignedIpv6 = effectiveProfile.assignedIpv6,
                 customDns = prefs.customDns,
                 dnsLeakProtectionEnabled = prefs.dnsLeakProtectionEnabled,
+                ipv6LeakProtectionEnabled = prefs.ipv6LeakProtectionEnabled,
                 mtu = prefs.tunnelMtu,
                 excludedPackages = prefs.excludedPackages,
                 wgQuickConfigFromBackend = wgQuickFromBackend
@@ -492,20 +443,33 @@ class VpnController(
                 backend.setState(tunnel, Tunnel.State.UP, wgConfig)
             }
 
-            // CRITICAL: Verify real WireGuard handshake & tunnel traffic before reporting CONNECTED.
-            val verified = verifyRealHandshakeAndTraffic(NexoraConfig.NEXORA_API_BASE_URL)
+            // CRITICAL: Verify real WireGuard handshake & tunnel traffic before reporting CONNECTED (12s timeout).
+            val verified = verifyRealHandshakeAndTraffic(prefs.apiBaseUrl)
             if (!verified) {
                 withContext(Dispatchers.IO) {
                     runCatching { backend.setState(tunnel, Tunnel.State.DOWN, null) }
                 }
                 throw IllegalStateException(
-                    "WireGuard handshake failed: ${effectiveProfile.endpoint} did not respond. Verify VPS server is running and public key matches."
+                    "WireGuard handshake timed out after 12s: ${effectiveProfile.endpoint} did not respond. Check UDP 51820 & server public key."
                 )
             }
 
             connectedAtMs = System.currentTimeMillis()
             lastRxBytes = 0L
             lastTxBytes = 0L
+            consecutiveStaleTicks = 0
+
+            activeHistoryRowId = connectionHistoryDao.insert(
+                ConnectionHistoryEntity(
+                    serverId = effectiveProfile.id,
+                    nodeCode = effectiveProfile.nodeCode.ifBlank { effectiveProfile.countryCode },
+                    serverName = effectiveProfile.name,
+                    countryName = effectiveProfile.countryName,
+                    endpoint = effectiveProfile.endpoint,
+                    connectedAt = connectedAtMs,
+                    status = "connected"
+                )
+            )
 
             val audit = auditTunnelNetwork(prefs.dnsLeakProtectionEnabled)
             _state.update {
@@ -517,7 +481,8 @@ class VpnController(
                     activeDnsServers = audit.dnsServers,
                     isDnsLeakProtected = audit.dnsProtected,
                     isIpv4Active = audit.hasIpv4,
-                    isIpv6Active = audit.hasIpv6
+                    isIpv6Active = audit.hasIpv6,
+                    lastHandshakeAgeSec = 0L
                 )
             }
 
@@ -527,6 +492,19 @@ class VpnController(
         } catch (e: Exception) {
             val prefs = prefsRepo.preferencesFlow.first()
             val message = e.localizedMessage ?: "Failed to establish real WireGuard tunnel"
+            connectionHistoryDao.insert(
+                ConnectionHistoryEntity(
+                    serverId = target.id,
+                    nodeCode = target.nodeCode.ifBlank { target.countryCode },
+                    serverName = target.name,
+                    countryName = target.countryName,
+                    endpoint = target.endpoint,
+                    connectedAt = System.currentTimeMillis(),
+                    disconnectedAt = System.currentTimeMillis(),
+                    status = "failed",
+                    disconnectReason = message.take(180)
+                )
+            )
             if (target.sourceType == "BACKEND" && prefs.authToken.isNotBlank()) {
                 scope.launch(Dispatchers.IO) {
                     runCatching {
@@ -548,15 +526,28 @@ class VpnController(
                     errorMessage = message
                 )
             }
+            // Auto-failover if enabled and an alternative healthy node exists
+            if (prefs.autoFailoverEnabled && !userRequestedDisconnect && target.sourceType == "BACKEND") {
+                val alternatives = serverDao.observeServers().first().filter {
+                    it.id != target.id && it.healthStatus == "online" && it.endpoint.contains(":")
+                }
+                val fallback = findBestServerByPing(alternatives)
+                if (fallback != null && !userRequestedDisconnect) {
+                    scheduleAutoReconnect(fallback)
+                }
+            }
         }
     }
 
     private suspend fun verifyRealHandshakeAndTraffic(backendBaseUrl: String): Boolean {
-        // Trigger a small real HTTP probe through the newly created tun0 interface and inspect GoBackend Rx stats
         val ipCheckDeferred = scope.async(Dispatchers.IO) {
             apiClient.fetchPublicIp(backendBaseUrl)
         }
-        repeat(12) {
+        repeat(24) {
+            if (userRequestedDisconnect) {
+                ipCheckDeferred.cancel()
+                return false
+            }
             delay(500L)
             val stats = withContext(Dispatchers.IO) {
                 runCatching { backend.getStatistics(tunnel) }.getOrNull()
@@ -566,9 +557,7 @@ class VpnController(
                 val ipRes = runCatching { ipCheckDeferred.await() }.getOrNull()
                 if (ipRes?.isSuccess == true) {
                     _state.update { it.copy(tunnelIp = ipRes.getOrNull()) }
-                    return true
                 }
-                // Even if ipify is blocked, non-zero authenticated WireGuard Rx bytes proves a real peer handshake occurred
                 return true
             }
         }
@@ -587,7 +576,7 @@ class VpnController(
         }
     }
 
-    suspend fun disconnect() {
+    suspend fun disconnect(reason: String = "user_disconnect") {
         userRequestedDisconnect = true
         reconnectJob?.cancel()
         telemetryJob?.cancel()
@@ -596,16 +585,30 @@ class VpnController(
         val previousServer = _state.value.activeServer
         val rxTotal = _state.value.sessionRxBytes
         val txTotal = _state.value.sessionTxBytes
-        val wasDemo = isDemoTunnelActive
-        isDemoTunnelActive = false
-        if (!wasDemo) {
-            try {
-                withContext(Dispatchers.IO) {
-                    backend.setState(tunnel, Tunnel.State.DOWN, null)
-                }
-            } catch (_: Exception) {
+        val durationSec = if (connectedAtMs > 0L) {
+            ((System.currentTimeMillis() - connectedAtMs) / 1000L).coerceAtLeast(0L)
+        } else 0L
+
+        try {
+            withContext(Dispatchers.IO) {
+                backend.setState(tunnel, Tunnel.State.DOWN, null)
             }
+        } catch (_: Exception) {
         }
+
+        activeHistoryRowId?.let { rowId ->
+            connectionHistoryDao.finalizeSession(
+                id = rowId,
+                disconnectedAt = System.currentTimeMillis(),
+                durationSeconds = durationSec,
+                rxBytes = rxTotal,
+                txBytes = txTotal,
+                status = "disconnected",
+                reason = reason
+            )
+            activeHistoryRowId = null
+        }
+
         if (previousServer?.sourceType == "BACKEND") {
             scope.launch(Dispatchers.IO) {
                 runCatching {
@@ -618,7 +621,8 @@ class VpnController(
                                 serverId = previousServer.id,
                                 clientPublicKey = prefs.wgPublicKey,
                                 rxBytes = rxTotal,
-                                txBytes = txTotal
+                                txBytes = txTotal,
+                                reason = reason
                             )
                         )
                     }
@@ -637,6 +641,7 @@ class VpnController(
                 isIpv6Active = false,
                 downloadSpeedBps = 0L,
                 uploadSpeedBps = 0L,
+                lastHandshakeAgeSec = null,
                 durationSeconds = 0L
             )
         }
@@ -667,34 +672,6 @@ class VpnController(
         telemetryJob = scope.launch {
             var tickCount = 0
             while (isActive) {
-                if (isDemoTunnelActive) {
-                    val rxDelta = 148_000L + ((tickCount * 37) % 190) * 1_024L
-                    val txDelta = 38_000L + ((tickCount * 19) % 64) * 1_024L
-                    lastRxBytes += rxDelta
-                    lastTxBytes += txDelta
-                    prefsRepo.addTrafficBytes(rxDelta, txDelta)
-
-                    val basePing = server.lastPingMs ?: 26
-                    val jitteredPing = (basePing + ((tickCount % 5) - 2)).coerceAtLeast(12)
-                    val interactive = powerManager.isInteractive && !powerManager.isPowerSaveMode
-                    _state.update {
-                        it.copy(
-                            downloadSpeedBps = rxDelta * 8L,
-                            uploadSpeedBps = txDelta * 8L,
-                            sessionRxBytes = lastRxBytes,
-                            sessionTxBytes = lastTxBytes,
-                            pingMs = jitteredPing,
-                            isDnsLeakProtected = dnsLeakProtectionEnabled,
-                            isIpv4Active = true,
-                            isIpv6Active = true,
-                            durationSeconds = ((System.currentTimeMillis() - connectedAtMs) / 1000L).coerceAtLeast(0L)
-                        )
-                    }
-                    tickCount++
-                    delay(if (interactive) 1000L else 8000L)
-                    continue
-                }
-
                 val stats = withContext(Dispatchers.IO) {
                     runCatching { backend.getStatistics(tunnel) }.getOrNull()
                 }
@@ -707,6 +684,9 @@ class VpnController(
 
                 if (rxDelta > 0 || txDelta > 0) {
                     prefsRepo.addTrafficBytes(rxDelta, txDelta)
+                    consecutiveStaleTicks = 0
+                } else {
+                    consecutiveStaleTicks++
                 }
 
                 val interactive = powerManager.isInteractive && !powerManager.isPowerSaveMode
@@ -716,11 +696,11 @@ class VpnController(
                     _state.value.pingMs
                 }
 
-                if (server.sourceType == "BACKEND" && tickCount > 0 && tickCount % 10 == 0) {
+                val prefs = prefsRepo.preferencesFlow.first()
+                if (server.sourceType == "BACKEND" && tickCount > 0 && tickCount % 12 == 0) {
                     scope.launch(Dispatchers.IO) {
                         runCatching {
-                            val prefs = prefsRepo.preferencesFlow.first()
-                            val service = apiClient.createService(NexoraConfig.NEXORA_API_BASE_URL)
+                            val service = apiClient.createService(prefs.apiBaseUrl)
                             if (service != null && prefs.authToken.isNotBlank() && prefs.wgPublicKey.isNotBlank()) {
                                 service.getVpnStatus(
                                     bearer = "Bearer ${prefs.authToken}",
@@ -733,7 +713,22 @@ class VpnController(
                 }
 
                 val audit = auditTunnelNetwork(dnsLeakProtectionEnabled)
+                val tunnelMissing = tickCount > 2 && !audit.hasVpnInterface
 
+                if (tunnelMissing && !userRequestedDisconnect && prefs.autoReconnectEnabled) {
+                    if (prefs.killSwitchEnabled) {
+                        _state.update {
+                            it.copy(
+                                status = VpnConnectionStatus.RECONNECTING,
+                                isDnsLeakProtected = false
+                            )
+                        }
+                    }
+                    scheduleAutoReconnect(server)
+                    break
+                }
+
+                val duration = ((System.currentTimeMillis() - connectedAtMs) / 1000L).coerceAtLeast(0L)
                 _state.update {
                     it.copy(
                         downloadSpeedBps = rxDelta * 8L,
@@ -745,17 +740,17 @@ class VpnController(
                         isDnsLeakProtected = audit.dnsProtected,
                         isIpv4Active = audit.hasIpv4,
                         isIpv6Active = audit.hasIpv6,
-                        durationSeconds = ((System.currentTimeMillis() - connectedAtMs) / 1000L).coerceAtLeast(0L)
+                        durationSeconds = duration
                     )
                 }
                 tickCount++
-                // Adaptive battery optimization: poll every 8s when screen is off or Battery Saver is on
                 delay(if (interactive) 1000L else 8000L)
             }
         }
     }
 
     private data class TunnelAudit(
+        val hasVpnInterface: Boolean,
         val dnsServers: List<String>,
         val dnsProtected: Boolean,
         val hasIpv4: Boolean,
@@ -772,6 +767,7 @@ class VpnController(
                 val hasV4 = lp.linkAddresses.any { it.address is Inet4Address }
                 val hasV6 = lp.linkAddresses.any { it.address is Inet6Address }
                 return TunnelAudit(
+                    hasVpnInterface = true,
                     dnsServers = dnsList,
                     dnsProtected = dnsLeakProtectionEnabled && dnsList.isNotEmpty(),
                     hasIpv4 = hasV4,
@@ -779,7 +775,7 @@ class VpnController(
                 )
             }
         }
-        return TunnelAudit(emptyList(), false, false, false)
+        return TunnelAudit(false, emptyList(), false, false, false)
     }
 
     private fun hasActiveNonVpnNetwork(): Boolean {

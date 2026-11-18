@@ -12,6 +12,14 @@ export function getJwtSecret() {
   return secret;
 }
 
+export function getConfiguredAdminSecret() {
+  const secret = (process.env.ADMIN_SECRET || process.env.ADMIN_API_KEY || '').trim();
+  if (!secret || secret.startsWith('replace_with_') || secret.startsWith('REPLACE_WITH_')) {
+    return '';
+  }
+  return secret;
+}
+
 export async function requireAuth(req, res, next) {
   const authHeader = req.headers.authorization || '';
   if (!authHeader.startsWith('Bearer ')) {
@@ -48,10 +56,10 @@ export async function requireAuth(req, res, next) {
 }
 
 export async function requireAdmin(req, res, next) {
-  const configuredKey = process.env.ADMIN_API_KEY;
-  const headerKey = req.headers['x-admin-key'];
+  const configuredKey = getConfiguredAdminSecret();
+  const headerKey = (req.headers['x-admin-key'] || req.headers['x-admin-secret'] || '').toString().trim();
   if (configuredKey && headerKey && headerKey === configuredKey) {
-    req.admin = { via: 'api_key' };
+    req.admin = { via: 'admin_secret' };
     return next();
   }
 

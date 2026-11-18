@@ -8,6 +8,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -25,17 +28,24 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.DataUsage
 import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.FileOpen
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.NetworkPing
 import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.Radar
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.SupportAgent
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.VerifiedUser
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -49,17 +59,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.NexoraConfig
 import com.example.R
 import com.example.data.local.UserPreferences
 import com.example.ui.components.GlowingConnectButton
 import com.example.ui.components.NexoraBrandLogo
+import com.example.ui.components.NexoraGlowCard
 import com.example.ui.components.TelemetryMetricTile
 import com.example.ui.theme.ElectricBlue
 import com.example.ui.theme.NeonCyan
@@ -82,12 +93,19 @@ import com.example.vpn.formatSpeedCompact
 fun HomeScreen(
     vpnState: VpnSessionState,
     preferences: UserPreferences,
+    hasServers: Boolean,
     isArabic: Boolean,
     onToggleConnect: () -> Unit,
     onConnectBestServer: () -> Unit,
     onRefreshIp: () -> Unit,
     onToggleLanguage: () -> Unit,
     onNavigateServers: () -> Unit,
+    onNavigateSettings: () -> Unit,
+    onNavigateStatus: () -> Unit,
+    onNavigatePingTest: () -> Unit,
+    onNavigateHistory: () -> Unit,
+    onNavigateSupport: () -> Unit,
+    onImportConf: () -> Unit,
     onDismissError: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -169,25 +187,6 @@ fun HomeScreen(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                if (NexoraConfig.IS_LOCAL_DEMO_MODE) {
-                    Surface(
-                        shape = RoundedCornerShape(50),
-                        color = StatusAmber.copy(alpha = 0.12f),
-                        border = BorderStroke(1.dp, StatusAmber.copy(alpha = 0.45f)),
-                        modifier = Modifier
-                            .padding(bottom = 10.dp)
-                            .testTag("local_demo_mode_badge")
-                    ) {
-                        Text(
-                            text = stringResource(R.string.label_local_demo_mode),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = StatusAmber,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
-                        )
-                    }
-                }
-
                 // Error banner if tunnel failed
                 AnimatedVisibility(visible = vpnState.errorMessage != null) {
                     Surface(
@@ -208,6 +207,51 @@ fun HomeScreen(
                     }
                 }
 
+                // First-run honest guidance when no servers or .conf profiles are present
+                AnimatedVisibility(visible = !hasServers) {
+                    NexoraGlowCard(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 14.dp),
+                        borderColor = NeonCyan.copy(alpha = 0.45f)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.setup_required_title),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = NeonCyan
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = stringResource(R.string.setup_required_body),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextSecondary
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(
+                                onClick = onNavigateSettings,
+                                colors = ButtonDefaults.buttonColors(containerColor = ElectricBlue),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Filled.Cloud, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(stringResource(R.string.action_configure_api), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            OutlinedButton(
+                                onClick = onImportConf,
+                                border = BorderStroke(1.dp, NeonCyan.copy(alpha = 0.6f)),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Filled.FileOpen, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(stringResource(R.string.action_import_conf), color = NeonCyan, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    }
+                }
+
                 if (isWide) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -218,7 +262,7 @@ fun HomeScreen(
                             modifier = Modifier.weight(0.9f),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            StatusPill(statusText = statusText, statusColor = statusColor)
+                            StatusPill(statusText = statusText, statusColor = statusColor, onClick = onNavigateStatus)
                             Spacer(modifier = Modifier.height(10.dp))
                             GlowingConnectButton(
                                 status = vpnState.status,
@@ -249,6 +293,12 @@ fun HomeScreen(
                                 totalBytes = preferences.totalRxBytes + preferences.totalTxBytes,
                                 columns = 2
                             )
+                            QuickToolsRow(
+                                onNavigateStatus = onNavigateStatus,
+                                onNavigatePingTest = onNavigatePingTest,
+                                onNavigateHistory = onNavigateHistory,
+                                onNavigateSupport = onNavigateSupport
+                            )
                         }
                     }
                 } else {
@@ -256,7 +306,7 @@ fun HomeScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        StatusPill(statusText = statusText, statusColor = statusColor)
+                        StatusPill(statusText = statusText, statusColor = statusColor, onClick = onNavigateStatus)
                         Spacer(modifier = Modifier.height(8.dp))
                         GlowingConnectButton(
                             status = vpnState.status,
@@ -285,10 +335,90 @@ fun HomeScreen(
                             totalBytes = preferences.totalRxBytes + preferences.totalTxBytes,
                             columns = 2
                         )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        QuickToolsRow(
+                            onNavigateStatus = onNavigateStatus,
+                            onNavigatePingTest = onNavigatePingTest,
+                            onNavigateHistory = onNavigateHistory,
+                            onNavigateSupport = onNavigateSupport
+                        )
                     }
                 }
                 Spacer(modifier = Modifier.height(20.dp))
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun QuickToolsRow(
+    onNavigateStatus: () -> Unit,
+    onNavigatePingTest: () -> Unit,
+    onNavigateHistory: () -> Unit,
+    onNavigateSupport: () -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = stringResource(R.string.quick_tools_title),
+            style = MaterialTheme.typography.labelLarge,
+            color = TextSecondary,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            QuickToolChip(
+                icon = Icons.Filled.Radar,
+                label = stringResource(R.string.nav_status),
+                testTag = "quick_tool_status",
+                onClick = onNavigateStatus
+            )
+            QuickToolChip(
+                icon = Icons.Filled.NetworkPing,
+                label = stringResource(R.string.nav_ping),
+                testTag = "quick_tool_ping",
+                onClick = onNavigatePingTest
+            )
+            QuickToolChip(
+                icon = Icons.Filled.History,
+                label = stringResource(R.string.nav_history),
+                testTag = "quick_tool_history",
+                onClick = onNavigateHistory
+            )
+            QuickToolChip(
+                icon = Icons.Filled.SupportAgent,
+                label = stringResource(R.string.nav_support),
+                testTag = "quick_tool_support",
+                onClick = onNavigateSupport
+            )
+        }
+    }
+}
+
+@Composable
+private fun QuickToolChip(
+    icon: ImageVector,
+    label: String,
+    testTag: String,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(12.dp),
+        color = ObsidianCard,
+        border = BorderStroke(1.dp, ObsidianBorder),
+        modifier = Modifier.testTag(testTag)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onBackground)
         }
     }
 }
@@ -396,8 +526,9 @@ private fun SecurityProtectionBanner(
 }
 
 @Composable
-private fun StatusPill(statusText: String, statusColor: Color) {
+private fun StatusPill(statusText: String, statusColor: Color, onClick: () -> Unit) {
     Surface(
+        onClick = onClick,
         shape = RoundedCornerShape(50),
         color = statusColor.copy(alpha = 0.12f),
         border = BorderStroke(1.dp, statusColor.copy(alpha = 0.45f))

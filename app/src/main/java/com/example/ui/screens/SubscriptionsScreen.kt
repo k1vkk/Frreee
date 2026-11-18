@@ -126,7 +126,7 @@ fun SubscriptionsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
+                    Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                         Text(
                             text = stringResource(R.string.current_plan_label),
                             style = MaterialTheme.typography.labelSmall,
@@ -136,6 +136,7 @@ fun SubscriptionsScreen(
                             text = when (activePlanTier) {
                                 "pro_monthly" -> stringResource(R.string.plan_pro_monthly_title)
                                 "pro_annual" -> stringResource(R.string.plan_pro_annual_title)
+                                "pro_premium" -> stringResource(R.string.plan_pro_premium_title)
                                 else -> stringResource(R.string.plan_free_title)
                             },
                             style = MaterialTheme.typography.titleLarge,
@@ -230,6 +231,23 @@ fun SubscriptionsScreen(
                 testTag = "subscribe_annual_button",
                 onClick = {
                     if (activity != null) onSubscribe(activity, BillingManager.PRODUCT_PRO_ANNUAL)
+                }
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            val premiumProduct = billingState.products[BillingManager.PRODUCT_PRO_PREMIUM]
+            PlanPurchaseCard(
+                title = stringResource(R.string.plan_pro_premium_title),
+                description = stringResource(R.string.plan_pro_premium_desc),
+                priceText = premiumProduct?.formattedPrice
+                    ?: stringResource(R.string.billing_product_unconfigured, BillingManager.PRODUCT_PRO_PREMIUM),
+                isCurrent = activePlanTier == "pro_premium",
+                highlighted = false,
+                enabled = activity != null && premiumProduct?.productDetails != null && !billingState.isPurchasing,
+                testTag = "subscribe_premium_button",
+                onClick = {
+                    if (activity != null) onSubscribe(activity, BillingManager.PRODUCT_PRO_PREMIUM)
                 }
             )
 

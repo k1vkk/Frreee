@@ -49,6 +49,7 @@ class BillingManager(
     companion object {
         const val PRODUCT_PRO_MONTHLY = "nexora_pro_monthly"
         const val PRODUCT_PRO_ANNUAL = "nexora_pro_annual"
+        const val PRODUCT_PRO_PREMIUM = "nexora_pro_premium"
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -96,7 +97,7 @@ class BillingManager(
 
     fun querySubscriptionProducts() {
         if (!billingClient.isReady) return
-        val productList = listOf(PRODUCT_PRO_MONTHLY, PRODUCT_PRO_ANNUAL).map { id ->
+        val productList = listOf(PRODUCT_PRO_MONTHLY, PRODUCT_PRO_ANNUAL, PRODUCT_PRO_PREMIUM).map { id ->
             QueryProductDetailsParams.Product.newBuilder()
                 .setProductId(id)
                 .setProductType(BillingClient.ProductType.SUBS)
@@ -131,7 +132,7 @@ class BillingManager(
         val offerToken = product?.subscriptionOfferDetails?.firstOrNull()?.offerToken
         if (product == null || offerToken == null) {
             _state.update {
-                it.copy(statusMessage = "Product $productId is not configured on Play Console yet.")
+                it.copy(statusMessage = "Product $productId is not configured on Google Play Console yet.")
             }
             return
         }
@@ -177,32 +178,33 @@ class BillingManager(
     private suspend fun handlePurchases(purchases: List<Purchase>) {
         for (purchase in purchases) {
             if (purchase.purchaseState == Purchase.PurchaseState.PURCHASED) {
-                if (!purchase.isAcknowledged) {
-                    val ackParams = AcknowledgePurchaseParams.newBuilder()
-                        .setPurchaseToken(purchase.purchaseToken)
-                        .build()
-                    withContext(Dispatchers.IO) {
-                        billingClient.acknowledgePurchase(ackParams) { }
+                val productId = purchase.products.firstOrNull() ?: continue
+                val verified = verifyPurchaseWithBackend(productId, purchase.purchaseToken)
+                if (verified) {
+                    if (!purchase.isAcknowledged) {
+                        val ackParams = AcknowledgePurchaseParams.newBuilder()
+                            .setPurchaseToken(purchase.purchaseToken)
+                            .build()
+                        withContext(Dispatchers.IO) {
+                            billingClient.acknowledgePurchase(ackParams) { }
+                        }
                     }
                 }
-                val productId = purchase.products.firstOrNull() ?: continue
-                val tier = when (productId) {
-                    PRODUCT_PRO_ANNUAL -> "pro_annual"
-                    PRODUCT_PRO_MONTHLY -> "pro_monthly"
-                    else -> "free"
-                }
-                prefsRepo.updatePlanTier(tier)
-                syncPurchaseWithBackend(productId, purchase.purchaseToken)
             }
         }
     }
 
-    private suspend fun syncPurchaseWithBackend(productId: String, purchaseToken: String) {
+    private suspend fun verifyPurchaseWithBackend(productId: String, purchaseToken: String): Boolean {
         val prefs = prefsRepo.preferencesFlow.first()
-        val service = apiClient.createService(prefs.apiBaseUrl) ?: return
-        if (prefs.authToken.isBlank()) return
-        try {
-            withContext(Dispatchers.IO) {
+        val service = apiClient.createService(prefs.apiBaseUrl)
+        if (service == null || prefs.authToken.isBlank()) {
+            _state.update {
+                it.copy(statusMessage = "Sign in to your NEXORA account and configure the backend URL to verify purchases.")
+            }
+            return false
+        }
+        return try {
+            val res = withContext(Dispatchers.IO) {
                 service.verifyPurchase(
                     bearer = "Bearer ${prefs.authToken}",
                     body = VerifyPurchaseRequest(
@@ -212,7 +214,26 @@ class BillingManager(
                     )
                 )
             }
-        } catch (_: Exception) {
+            if (res.isSuccessful && res.body()?.ok == true) {
+                val body = res.body()!!
+                prefsRepo.updateSubscription(
+                    planTier = body.planTier,
+                    status = body.status,
+                    expiresAt = body.expiresAt
+                )
+                _state.update { it.copy(statusMessage = null) }
+                true
+            } else {
+                _state.update {
+                    it.copy(statusMessage = "Server receipt verification failed (HTTP ${res.code()}). Entitlement not granted.")
+                }
+                false
+            }
+        } catch (e: Exception) {
+            _state.update {
+                it.copy(statusMessage = e.localizedMessage ?: "Receipt verification network error")
+            }
+            false
         }
     }
 }

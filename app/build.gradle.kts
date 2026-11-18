@@ -77,7 +77,29 @@ android {
 secrets {
   propertiesFileName = ".env"
   defaultPropertiesFileName = ".env.example"
-  ignoreList.add("FIREBASE_APPCHECK_DEBUG_TOKEN")
+  ignoreList.addAll(
+    listOf(
+      "FIREBASE_APPCHECK_DEBUG_TOKEN",
+      "DATABASE_URL",
+      "DATABASE_CA_CERT",
+      "DATABASE_SSL",
+      "DATABASE_SSL_REJECT_UNAUTHORIZED",
+      "DATABASE_POOL_MAX",
+      "POSTGRES_PASSWORD",
+      "SUPABASE_URL",
+      "SUPABASE_SERVICE_ROLE_KEY",
+      "SUPABASE_ANON_KEY",
+      "JWT_SECRET",
+      "ADMIN_SECRET",
+      "ADMIN_API_KEY",
+      "NODE_AGENT_SECRET",
+      "GOOGLE_PLAY_SERVICE_ACCOUNT",
+      "GOOGLE_PLAY_SERVICE_ACCOUNT_JSON",
+      "WIREGUARD_SERVER_PUBLIC_KEY",
+      "RESEND_API_KEY",
+      "SMTP_WEBHOOK_URL"
+    )
+  )
 }
 
 googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.WARN }

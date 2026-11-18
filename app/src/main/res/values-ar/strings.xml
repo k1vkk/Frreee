@@ -236,4 +236,74 @@
     <string name="vpn_notification_stats">↓ %1$s  •  ↑ %2$s  •  %3$s</string>
     <string name="error_vpn_permission_denied">لم يمنح النظام إذن تشغيل VPN.</string>
     <string name="error_invalid_url">يرجى إدخال رابط إنتاجي يبدأ بـ https://.</string>
+
+    <!-- Additional 10-Screen Navigation & Tools -->
+    <string name="nav_status">حالة الاتصال</string>
+    <string name="nav_ping">اختبار Ping</string>
+    <string name="nav_history">سجل الاتصال</string>
+    <string name="nav_support">الدعم الفني</string>
+    <string name="quick_tools_title">أدوات الشبكة والأمان</string>
+    <string name="action_back">رجوع</string>
+
+    <!-- Pro Premium Tier & Extended WireGuard Toggles -->
+    <string name="plan_pro_premium_title">NEXORA Pro Premium</string>
+    <string name="plan_pro_premium_desc">توجيه خليجي مخصص عالي الأولوية، تحويل تلقائي بين العقد، ودعم حتى 10 مفاتيح WireGuard.</string>
+    <string name="toggle_auto_failover">التحويل التلقائي لأقرب خادم سليم عند التعطل</string>
+    <string name="toggle_ipv6_leak_protection">حماية تسرب IPv6 (توجيه ::/0 داخل النفق)</string>
+    <string name="label_engine_speedofme">المحرك: SpeedOf.Me JS API</string>
+    <string name="label_engine_cloudflare">المحرك: Cloudflare Edge HTTPS</string>
+    <string name="label_server_telemetry">معالج %1$d%% • ذاكرة %2$d%% • %3$d متصل</string>
+    <string name="label_gcc_slots_title">حالة البنية الخليجية (%1$d/%2$d متصل)</string>
+    <string name="label_pending_vps">بانتظار تجهيز VPS</string>
+
+    <!-- Connection Status Screen (Screen 3) -->
+    <string name="conn_status_title">حالة الاتصال الفورية</string>
+    <string name="conn_status_subtitle">قياسات حية لواجهة WireGuard GoBackend وفحص التسرب</string>
+    <string name="conn_no_tunnel">لا يوجد نفق WireGuard نشط حالياً.</string>
+    <string name="conn_ipv4_assigned">عنوان IPv4 داخل النفق</string>
+    <string name="conn_ipv6_assigned">عنوان IPv6 داخل النفق</string>
+    <string name="conn_active_dns">خوادم DNS المفروضة</string>
+    <string name="conn_ipv4_tunnel">نفق IPv4 نشط</string>
+    <string name="conn_ipv6_tunnel">الدعم المزدوج IPv6 نشط</string>
+    <string name="conn_rx_tx_totals">حجم نقل الجلسة (استلام / إرسال)</string>
+    <string name="conn_server_load">حمل وموارد الخادم</string>
+    <string name="action_disconnect_now">قطع النفق فوراً</string>
+    <string name="action_reconnect_now">إعادة الاتصال</string>
+
+    <!-- Ping Test Screen (Screen 5) -->
+    <string name="ping_test_title">فحص Ping والاستجابة الخليجية</string>
+    <string name="ping_test_subtitle">قياس حقيقي متعدد العينات لزمن الاستجابة والتذبذب وفقدان الحزم</string>
+    <string name="ping_custom_hint">عنوان المضيف أو المنفذ (مثال 1.1.1.1:443)</string>
+    <string name="action_probe_host">بدء فحص 4 عينات</string>
+    <string name="label_jitter_ms">التذبذب: %1$d مللي ث</string>
+    <string name="label_packet_loss">الفقد: %1$d%%</string>
+    <string name="label_probe_samples">%1$d/%2$d عينات</string>
+    <string name="ping_pending_vps_note">جهّز هذا الخادم عبر backend/scripts/setup-wg-vps.sh لتفعيل الفحص الحي.</string>
+
+    <!-- Connection History Screen (Screen 6) -->
+    <string name="conn_history_title">سجل اتصالات النفق</string>
+    <string name="conn_history_subtitle">جلسات WireGuard المسجلة محلياً في قاعدة البيانات المشفرة</string>
+    <string name="conn_history_empty">لم يتم تسجيل أي جلسات اتصال WireGuard بعد.</string>
+    <string name="conn_history_duration">المدة: %1$s</string>
+    <string name="conn_history_transfer">↓ %1$s  •  ↑ %2$s</string>
+
+    <!-- Support Center Screen (Screen 10) -->
+    <string name="support_title">مركز الدعم والتشخيص</string>
+    <string name="support_subtitle">فحص جاهزية النظام الفوري وأدلة WireGuard وتذاكر الدعم</string>
+    <string name="support_diag_title">تدقيق جاهزية النظام الفوري</string>
+    <string name="action_copy_diag">نسخ تقرير التشخيص</string>
+    <string name="diag_copied_msg">تم نسخ تقرير التشخيص إلى الحافظة</string>
+    <string name="support_faq_title">الأسئلة الشائعة واستكشاف الأخطاء</string>
+    <string name="faq_q1">لماذا تظهر السيرفرات الخليجية بانتظار تجهيز VPS؟</string>
+    <string name="faq_a1">تطبيق NEXORA لا يستخدم سيرفرات أو عناوين IP وهمية أبداً. كل مدينة خليجية (SA01–OM01) تبقى قيد التجهيز حتى تنفذ setup-wg-vps.sh على خادم VPS فعلي وتربطه بـ PostgreSQL.</string>
+    <string name="faq_q2">كيف أتصل بخادم WireGuard خاص بدون الخادم الخلفي؟</string>
+    <string name="faq_a2">اضغط استيراد .conf أو إعداد يدوي في شاشة السيرفرات لإدخال ملف WireGuard قياسي وتشغيله مباشرة عبر GoBackend.</string>
+    <string name="faq_q3">كيف يعمل اختبار السرعة بدون مفاتيح SpeedOf.Me؟</string>
+    <string name="faq_a3">عند ضبط مفاتيح SpeedOf.Me يعمل المحرك الرسمي، وعند عدم ضبطها يعمل محرك Cloudflare Edge HTTPS لقياس التحميل والرفع والـ Ping فعلياً بدون أرقام وهمية.</string>
+    <string name="support_ticket_title">إرسال تذكرة دعم فني</string>
+    <string name="support_sign_in_hint">سجّل الدخول من شاشة الحساب لإرسال التذاكر ومتابعتها عبر PostgreSQL.</string>
+    <string name="field_ticket_subject">عنوان المشكلة</string>
+    <string name="field_ticket_message">اشرح المشكلة أو رمز العقدة</string>
+    <string name="action_submit_ticket">إرسال التذكرة</string>
+    <string name="support_my_tickets">تذاكرك الأخيرة</string>
 </resources>

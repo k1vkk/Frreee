@@ -1,0 +1,68 @@
+name: NEXORA Android CI/CD
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Prepare .env from Secrets
+        run: |
+          cp .env.example .env
+          echo "NEXORA_API_BASE_URL=${{ secrets.NEXORA_API_BASE_URL }}" >> .env
+          echo "SPEEDOFME_API_KEY=${{ secrets.SPEEDOFME_API_KEY }}" >> .env
+          echo "SPEEDOFME_DOMAIN=${{ secrets.SPEEDOFME_DOMAIN }}" >> .env
+
+      - name: Decode debug keystore if missing
+        run: |
+          if [ ! -f debug.keystore ] && [ -f debug.keystore.base64 ]; then
+            base64 -d debug.keystore.base64 > debug.keystore
+          fi
+
+      - name: Run Unit & Robolectric Tests
+        run: gradle :app:testDebugUnitTest
+
+      - name: Build Debug APK
+        run: gradle :app:assembleDebug
+
+      - name: Upload Debug APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexora-vpn-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+
+      - name: Build Signed Release APK & AAB (if signing secret is configured)
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        env:
+          KEYSTORE_PATH: ${{ github.workspace }}/release-upload.jks
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "${KEYSTORE_PATH}"
+          gradle :app:assembleRelease :app:bundleRelease
+
+      - name: Upload Release Artifacts
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexora-vpn-release-bundle
+          path: |
+            app/build/outputs/apk/release/*.apk
+            app/build/outputs/bundle/release/*.aab

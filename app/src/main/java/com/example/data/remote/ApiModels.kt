@@ -41,6 +41,11 @@ data class UserDto(
 )
 
 @JsonClass(generateAdapter = true)
+data class UserProfileResponse(
+    val user: UserDto
+)
+
+@JsonClass(generateAdapter = true)
 data class ForgotPasswordRequest(
     val email: String
 )
@@ -88,12 +93,21 @@ data class ServerDto(
     val countryName: String,
     val countryCode: String,
     val city: String,
-    val endpoint: String,
-    val serverPublicKey: String,
+    val publicIp: String? = null,
+    val serverPort: Int = 51820,
+    val endpoint: String? = null,
+    val serverPublicKey: String? = null,
     val dnsServers: String = "1.1.1.1, 1.0.0.1, 2606:4700:4700::1111, 2606:4700:4700::1001",
     val tier: String = "free",
-    val healthStatus: String = "online",
+    val healthStatus: String = "pending_vps",
     val latencyMs: Int? = null,
+    val jitterMs: Int? = null,
+    val packetLossPercent: Float = 0f,
+    val cpuUsage: Float = 0f,
+    val ramUsage: Float = 0f,
+    val networkTrafficBytes: Long = 0L,
+    val activeUsers: Int = 0,
+    val maxPeers: Int = 250,
     val lastHealthCheckAt: String? = null,
     val loadPercent: Int = 0
 )
@@ -101,6 +115,21 @@ data class ServerDto(
 @JsonClass(generateAdapter = true)
 data class ServersResponse(
     val servers: List<ServerDto>
+)
+
+@JsonClass(generateAdapter = true)
+data class ServersHealthSummaryDto(
+    val total: Int = 0,
+    val online: Int = 0,
+    val pendingVps: Int = 0,
+    val offline: Int = 0
+)
+
+@JsonClass(generateAdapter = true)
+data class ServersHealthResponse(
+    val ok: Boolean = true,
+    val summary: ServersHealthSummaryDto = ServersHealthSummaryDto(),
+    val servers: List<ServerDto> = emptyList()
 )
 
 @JsonClass(generateAdapter = true)
@@ -138,7 +167,8 @@ data class VpnDisconnectRequest(
     val serverId: String? = null,
     val clientPublicKey: String? = null,
     val rxBytes: Long? = null,
-    val txBytes: Long? = null
+    val txBytes: Long? = null,
+    val reason: String? = null
 )
 
 @JsonClass(generateAdapter = true)
@@ -170,6 +200,32 @@ data class VpnStatusResponse(
 )
 
 @JsonClass(generateAdapter = true)
+data class SpeedTestConfigResponse(
+    val ok: Boolean = true,
+    val provider: String = "cloudflare_http",
+    val speedOfMeConfigured: Boolean = false,
+    val apiKey: String? = null,
+    val domain: String? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class SpeedTestUploadRequest(
+    val serverId: String? = null,
+    val provider: String = "speedofme",
+    val vpnActive: Boolean,
+    val serverLabel: String,
+    val pingMs: Int,
+    val jitterMs: Int,
+    val downloadMbps: Double,
+    val uploadMbps: Double,
+    val maxDownloadMbps: Double = 0.0,
+    val maxUploadMbps: Double = 0.0,
+    val dataUsedBytes: Long = 0L,
+    val testServer: String? = null,
+    val publicIp: String? = null
+)
+
+@JsonClass(generateAdapter = true)
 data class VerifyPurchaseRequest(
     val productId: String,
     val purchaseToken: String,
@@ -191,6 +247,35 @@ data class SubscriptionMeResponse(
     val productId: String? = null,
     val expiresAt: String? = null,
     val updatedAt: String? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class SupportTicketRequest(
+    val category: String,
+    val subject: String,
+    val message: String,
+    val diagnosticsJson: Map<String, String>? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class SupportTicketDto(
+    val id: String,
+    val category: String,
+    val subject: String,
+    val message: String? = null,
+    val status: String,
+    val createdAt: String
+)
+
+@JsonClass(generateAdapter = true)
+data class SupportTicketsResponse(
+    val tickets: List<SupportTicketDto> = emptyList()
+)
+
+@JsonClass(generateAdapter = true)
+data class SupportTicketCreatedResponse(
+    val ok: Boolean = true,
+    val ticket: SupportTicketDto
 )
 
 @JsonClass(generateAdapter = true)

@@ -21,10 +21,14 @@ import kotlinx.serialization.Serializable
 sealed interface NexoraRoute {
     @Serializable data object Home : NexoraRoute
     @Serializable data object Servers : NexoraRoute
+    @Serializable data object ConnectionStatus : NexoraRoute
     @Serializable data object SpeedTest : NexoraRoute
+    @Serializable data object PingTest : NexoraRoute
+    @Serializable data object ConnectionHistory : NexoraRoute
     @Serializable data object Subscriptions : NexoraRoute
-    @Serializable data object Settings : NexoraRoute
     @Serializable data object Profile : NexoraRoute
+    @Serializable data object Settings : NexoraRoute
+    @Serializable data object Support : NexoraRoute
 }
 
 data class TopLevelDestination(

@@ -32,6 +32,7 @@ class NexoraApp : Application() {
             appContext = this,
             prefsRepo = prefsRepo,
             serverDao = database.serverProfileDao(),
+            connectionHistoryDao = database.connectionHistoryDao(),
             apiClient = apiClient,
             diagnostics = diagnostics
         )

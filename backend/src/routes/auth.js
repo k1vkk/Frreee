@@ -4,7 +4,9 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { pool } from '../db.js';
 import { getJwtSecret, requireAuth } from '../middleware/auth.js';
+import { asyncHandler } from '../middleware/asyncHandler.js';
 import { logBackendError } from '../services/errorLogger.js';
+import { isValidEmail, isValidUuid } from '../utils/validators.js';
 
 const router = Router();
 const JWT_EXPIRES_IN = () => process.env.JWT_EXPIRES_IN || '30d';
@@ -59,13 +61,13 @@ router.get('/', (_req, res) => {
   });
 });
 
-router.post('/register', async (req, res) => {
+router.post('/register', asyncHandler(async (req, res) => {
   const { email, password, displayName, deviceLabel } = req.body || {};
-  if (!email || !password || password.length < 8) {
+  if (!isValidEmail(email) || !password || String(password).length < 8) {
     return res.status(400).json({ error: 'Valid email and password (min 8 chars) required' });
   }
   const normalizedEmail = String(email).trim().toLowerCase();
-  const safeName = String(displayName || normalizedEmail.split('@')[0]).trim();
+  const safeName = String(displayName || normalizedEmail.split('@')[0]).trim().slice(0, 80);
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -74,13 +76,11 @@ router.post('/register', async (req, res) => {
       await client.query('ROLLBACK');
       return res.status(409).json({ error: 'Email already registered' });
     }
-    const passwordHash = await bcrypt.hash(password, 12);
-    const countRes = await client.query('SELECT COUNT(*)::int AS cnt FROM users');
-    const assignedRole = countRes.rows[0].cnt === 0 ? 'admin' : 'user';
+    const passwordHash = await bcrypt.hash(String(password), 12);
 
     const userRes = await client.query(
       'INSERT INTO users (email, password_hash, display_name, role) VALUES ($1, $2, $3, $4) RETURNING id, email, display_name, role, created_at',
-      [normalizedEmail, passwordHash, safeName, assignedRole]
+      [normalizedEmail, passwordHash, safeName, 'user']
     );
     const user = userRes.rows[0];
     await client.query(
@@ -89,7 +89,7 @@ router.post('/register', async (req, res) => {
     );
     const sessionRes = await client.query(
       'INSERT INTO auth_sessions (user_id, device_label, ip_address) VALUES ($1, $2, $3) RETURNING id',
-      [user.id, deviceLabel || 'Android Device', req.ip]
+      [user.id, String(deviceLabel || 'Android Device').slice(0, 120), req.ip]
     );
     await client.query('COMMIT');
     const token = jwt.sign(
@@ -115,12 +115,12 @@ router.post('/register', async (req, res) => {
   } finally {
     client.release();
   }
-});
+}));
 
-router.post('/login', async (req, res) => {
+router.post('/login', asyncHandler(async (req, res) => {
   const { email, password, deviceLabel } = req.body || {};
-  if (!email || !password) {
-    return res.status(400).json({ error: 'Email and password required' });
+  if (!isValidEmail(email) || !password) {
+    return res.status(400).json({ error: 'Valid email and password required' });
   }
   const normalizedEmail = String(email).trim().toLowerCase();
   const userRes = await pool.query(
@@ -138,13 +138,13 @@ router.post('/login', async (req, res) => {
   if (user.is_suspended) {
     return res.status(403).json({ error: 'Account suspended by administrator' });
   }
-  const valid = await bcrypt.compare(password, user.password_hash);
+  const valid = await bcrypt.compare(String(password), user.password_hash);
   if (!valid) {
     return res.status(401).json({ error: 'Invalid credentials' });
   }
   const sessionRes = await pool.query(
     'INSERT INTO auth_sessions (user_id, device_label, ip_address) VALUES ($1, $2, $3) RETURNING id',
-    [user.id, deviceLabel || 'Android Device', req.ip]
+    [user.id, String(deviceLabel || 'Android Device').slice(0, 120), req.ip]
   );
   const token = jwt.sign(
     { sub: user.id, sid: sessionRes.rows[0].id, email: user.email, role: user.role },
@@ -163,12 +163,12 @@ router.post('/login', async (req, res) => {
       expiresAt: user.expires_at
     }
   });
-});
+}));
 
-router.post('/forgot-password', async (req, res) => {
+router.post('/forgot-password', asyncHandler(async (req, res) => {
   const { email } = req.body || {};
-  if (!email) {
-    return res.status(400).json({ error: 'Email address required' });
+  if (!isValidEmail(email)) {
+    return res.status(400).json({ error: 'Valid email address required' });
   }
   const normalizedEmail = String(email).trim().toLowerCase();
   const userRes = await pool.query(
@@ -177,7 +177,6 @@ router.post('/forgot-password', async (req, res) => {
   );
 
   if (userRes.rowCount === 0) {
-    // Do not enumerate accounts
     return res.json({ ok: true, message: 'If this email exists, a reset code has been dispatched.' });
   }
   const user = userRes.rows[0];
@@ -199,7 +198,7 @@ router.post('/forgot-password', async (req, res) => {
     const delivered = await dispatchPasswordResetEmail(user.email, user.display_name, code);
     if (!delivered) {
       return res.status(503).json({
-        error: 'Email delivery provider (RESEND_API_KEY or SMTP_WEBHOOK_URL) is not configured on backend. Ask an administrator to reset your password in the Admin Dashboard.'
+        error: 'Email delivery provider (RESEND_API_KEY or SMTP_WEBHOOK_URL) is not configured on backend.'
       });
     }
     return res.json({ ok: true, message: 'Verification code sent to your email address.' });
@@ -212,11 +211,11 @@ router.post('/forgot-password', async (req, res) => {
     });
     return res.status(502).json({ error: 'Unable to deliver reset email right now.' });
   }
-});
+}));
 
-router.post('/reset-password', async (req, res) => {
+router.post('/reset-password', asyncHandler(async (req, res) => {
   const { email, code, newPassword } = req.body || {};
-  if (!email || !code || !newPassword || String(newPassword).length < 8) {
+  if (!isValidEmail(email) || !code || !newPassword || String(newPassword).length < 8) {
     return res.status(400).json({ error: 'Valid email, 6-digit code, and new password (min 8 chars) required' });
   }
   const normalizedEmail = String(email).trim().toLowerCase();
@@ -255,9 +254,9 @@ router.post('/reset-password', async (req, res) => {
   } finally {
     client.release();
   }
-});
+}));
 
-router.get('/me', requireAuth, async (req, res) => {
+router.get('/me', requireAuth, asyncHandler(async (req, res) => {
   const userRes = await pool.query(
     `SELECT u.id, u.email, u.display_name, u.role, s.plan_tier, s.status AS sub_status, s.expires_at
      FROM users u
@@ -302,19 +301,22 @@ router.get('/me', requireAuth, async (req, res) => {
       isCurrent: s.is_current
     }))
   });
-});
+}));
 
-router.delete('/sessions/:sessionId', requireAuth, async (req, res) => {
+router.delete('/sessions/:sessionId', requireAuth, asyncHandler(async (req, res) => {
+  if (!isValidUuid(req.params.sessionId)) {
+    return res.status(400).json({ error: 'Invalid sessionId format' });
+  }
   await pool.query(
     'UPDATE auth_sessions SET revoked = TRUE WHERE id = $1 AND user_id = $2',
     [req.params.sessionId, req.auth.userId]
   );
   return res.json({ ok: true });
-});
+}));
 
-router.post('/logout', requireAuth, async (req, res) => {
+router.post('/logout', requireAuth, asyncHandler(async (req, res) => {
   await pool.query('UPDATE auth_sessions SET revoked = TRUE WHERE id = $1', [req.auth.sessionId]);
   return res.json({ ok: true });
-});
+}));
 
 export default router;

@@ -67,6 +67,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.data.local.ServerProfileEntity
+import com.example.data.remote.ServerDto
+import com.example.data.remote.ServersHealthSummaryDto
 import com.example.ui.components.NexoraGlowCard
 import com.example.ui.theme.ElectricBlue
 import com.example.ui.theme.NeonCyan
@@ -82,11 +84,14 @@ import com.example.ui.theme.TextSecondary
 import com.example.ui.viewmodel.ServerFilter
 import com.example.ui.viewmodel.ServersUiState
 import com.example.vpn.VpnConnectionStatus
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ServersScreen(
     uiState: ServersUiState,
+    gccSlotsHealth: List<ServerDto>,
+    healthSummary: ServersHealthSummaryDto,
     activeServerId: String?,
     vpnStatus: VpnConnectionStatus,
     isFindingBestServer: Boolean,
@@ -263,31 +268,89 @@ fun ServersScreen(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 if (uiState.servers.isEmpty()) {
-                    NexoraGlowCard(modifier = Modifier.fillMaxWidth()) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.Dns,
-                                contentDescription = null,
-                                tint = NeonCyan,
-                                modifier = Modifier.size(44.dp)
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        NexoraGlowCard(modifier = Modifier.fillMaxWidth()) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 18.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Dns,
+                                    contentDescription = null,
+                                    tint = NeonCyan,
+                                    modifier = Modifier.size(44.dp)
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text(
+                                    text = stringResource(R.string.servers_empty_title),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onBackground
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = stringResource(R.string.servers_empty_body),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = TextSecondary
+                                )
+                            }
+                        }
+
+                        if (gccSlotsHealth.isNotEmpty()) {
                             Text(
-                                text = stringResource(R.string.servers_empty_title),
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onBackground
+                                text = stringResource(
+                                    R.string.label_gcc_slots_title,
+                                    healthSummary.online,
+                                    healthSummary.total
+                                ),
+                                style = MaterialTheme.typography.titleSmall,
+                                color = NeonCyan
                             )
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(
-                                text = stringResource(R.string.servers_empty_body),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = TextSecondary
-                            )
+                            gccSlotsHealth.forEach { slot ->
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = ObsidianCard,
+                                    border = BorderStroke(1.dp, ObsidianBorder),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(12.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = "${slot.nodeCode} • ${slot.countryName} — ${slot.city}",
+                                                style = MaterialTheme.typography.labelLarge
+                                            )
+                                            Text(
+                                                text = slot.endpoint ?: stringResource(R.string.label_pending_vps),
+                                                style = TelemetryMonoStyle.copy(fontSize = 11.sp),
+                                                color = TextSecondary
+                                            )
+                                        }
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = if (slot.healthStatus == "online") StatusEmerald.copy(alpha = 0.16f)
+                                            else StatusAmber.copy(alpha = 0.16f)
+                                        ) {
+                                            Text(
+                                                text = if (slot.healthStatus == "online") "ONLINE"
+                                                else stringResource(R.string.label_pending_vps),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = if (slot.healthStatus == "online") StatusEmerald else StatusAmber,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 } else {
@@ -399,6 +462,20 @@ private fun ServerNodeCard(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
+                    if (server.sourceType == "BACKEND") {
+                        Text(
+                            text = stringResource(
+                                R.string.label_server_telemetry,
+                                server.cpuUsage.roundToInt(),
+                                server.ramUsage.roundToInt(),
+                                server.activeUsers
+                            ),
+                            style = TelemetryMonoStyle.copy(fontSize = 10.sp),
+                            color = NeonCyan,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
                 IconButton(onClick = onToggleFavorite) {
                     Icon(

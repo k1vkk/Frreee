@@ -27,8 +27,10 @@ import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Devices
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.SupportAgent
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -88,6 +90,8 @@ fun ProfileScreen(
     onRotateKey: () -> Unit,
     onRevokeSession: (String) -> Unit,
     onClearError: () -> Unit,
+    onNavigateHistory: () -> Unit,
+    onNavigateSupport: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -440,6 +444,27 @@ fun ProfileScreen(
                             }
                         }
                     }
+                }
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(
+                    onClick = onNavigateHistory,
+                    border = BorderStroke(1.dp, ObsidianBorder),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Filled.History, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(stringResource(R.string.nav_history), color = MaterialTheme.colorScheme.onBackground)
+                }
+                OutlinedButton(
+                    onClick = onNavigateSupport,
+                    border = BorderStroke(1.dp, ObsidianBorder),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Filled.SupportAgent, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(stringResource(R.string.nav_support), color = MaterialTheme.colorScheme.onBackground)
                 }
             }
 

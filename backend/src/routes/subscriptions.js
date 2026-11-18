@@ -3,17 +3,19 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import { pool } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
+import { asyncHandler } from '../middleware/asyncHandler.js';
 import { logBackendError } from '../services/errorLogger.js';
 
 const router = Router();
 
-const PRODUCT_TO_TIER = {
+export const PRODUCT_TO_TIER = {
   nexora_pro_monthly: { tier: 'pro_monthly', days: 30 },
-  nexora_pro_annual: { tier: 'pro_annual', days: 365 }
+  nexora_pro_annual: { tier: 'pro_annual', days: 365 },
+  nexora_pro_premium: { tier: 'pro_premium', days: 365 }
 };
 
 async function loadServiceAccount() {
-  const raw = process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON;
+  const raw = process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON || process.env.GOOGLE_PLAY_SERVICE_ACCOUNT;
   if (!raw || !raw.trim()) return null;
   if (raw.trim().startsWith('{')) {
     return JSON.parse(raw);
@@ -81,7 +83,7 @@ async function verifyWithGooglePlayApi({ packageName, purchaseToken }) {
   };
 }
 
-router.get('/me', requireAuth, async (req, res) => {
+router.get('/me', requireAuth, asyncHandler(async (req, res) => {
   const subRes = await pool.query(
     'SELECT plan_tier, status, play_product_id, expires_at, updated_at FROM subscriptions WHERE user_id = $1',
     [req.auth.userId]
@@ -107,9 +109,9 @@ router.get('/me', requireAuth, async (req, res) => {
     expiresAt: row.expires_at,
     updatedAt: row.updated_at
   });
-});
+}));
 
-router.post('/verify', requireAuth, async (req, res) => {
+router.post('/verify', requireAuth, asyncHandler(async (req, res) => {
   const { productId, purchaseToken, packageName } = req.body || {};
   const mapped = PRODUCT_TO_TIER[productId];
   if (!mapped || !purchaseToken) {
@@ -131,8 +133,8 @@ router.post('/verify', requireAuth, async (req, res) => {
       await logBackendError({
         level: 'warn',
         source: 'billing',
-        endpoint: '/api/v1/subscriptions/verify',
-        message: 'GOOGLE_PLAY_SERVICE_ACCOUNT_JSON is not configured; cannot verify Play purchase server-side.',
+        endpoint: '/api/subscriptions/verify',
+        message: 'GOOGLE_PLAY_SERVICE_ACCOUNT is not configured; cannot verify Play purchase server-side.',
         userId: req.auth.userId
       });
       return res.status(503).json({
@@ -175,12 +177,12 @@ router.post('/verify', requireAuth, async (req, res) => {
     await logBackendError({
       level: 'error',
       source: 'billing',
-      endpoint: '/api/v1/subscriptions/verify',
+      endpoint: '/api/subscriptions/verify',
       message: err.message,
       userId: req.auth.userId
     });
     return res.status(502).json({ error: err.message || 'Play verification failed' });
   }
-});
+}));
 
 export default router;

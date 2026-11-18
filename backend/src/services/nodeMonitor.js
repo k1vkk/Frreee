@@ -1,59 +1,58 @@
-import net from 'node:net';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { pool } from '../db.js';
 import { logBackendError } from './errorLogger.js';
 
-function parseEndpoint(endpoint) {
-  if (!endpoint || !endpoint.includes(':')) return null;
-  const idx = endpoint.lastIndexOf(':');
-  const host = endpoint.slice(0, idx).replace(/^\[|\]$/g, '');
-  const port = Number(endpoint.slice(idx + 1));
-  return { host, port };
-}
+const execFileAsync = promisify(execFile);
 
 async function probeAgentHealth(agentUrl) {
-  const secret = process.env.NODE_AGENT_SECRET || '';
+  const secret = (process.env.NODE_AGENT_SECRET || '').trim();
   const startedAt = Date.now();
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 4000);
+  const timer = setTimeout(() => controller.abort(), 4500);
   try {
     const res = await fetch(`${agentUrl.replace(/\/+$/, '')}/health`, {
       headers: secret ? { 'x-agent-secret': secret } : {},
       signal: controller.signal
     });
-    if (!res.ok) return { ok: false, latencyMs: null, activePeers: 0 };
+    if (!res.ok) {
+      return { ok: false, latencyMs: null, activePeers: 0, cpuUsage: 0, ramUsage: 0, rxBytes: 0, txBytes: 0 };
+    }
     const data = await res.json();
     return {
       ok: Boolean(data.ok),
       latencyMs: Math.max(1, Date.now() - startedAt),
-      activePeers: Number(data.activePeers || 0)
+      activePeers: Number(data.activePeers || 0),
+      cpuUsage: Number(data.cpuUsage || 0),
+      ramUsage: Number(data.ramUsage || 0),
+      rxBytes: Number(data.rxBytes || 0),
+      txBytes: Number(data.txBytes || 0)
     };
   } catch {
-    return { ok: false, latencyMs: null, activePeers: 0 };
+    return { ok: false, latencyMs: null, activePeers: 0, cpuUsage: 0, ramUsage: 0, rxBytes: 0, txBytes: 0 };
   } finally {
     clearTimeout(timer);
   }
 }
 
-function probeTcpReachability(host, port = 22) {
-  return new Promise((resolve) => {
-    const startedAt = Date.now();
-    const socket = new net.Socket();
-    socket.setTimeout(3000);
-    socket.once('connect', () => {
-      const latencyMs = Math.max(1, Date.now() - startedAt);
-      socket.destroy();
-      resolve({ ok: true, latencyMs });
-    });
-    socket.once('timeout', () => {
-      socket.destroy();
-      resolve({ ok: false, latencyMs: null });
-    });
-    socket.once('error', () => {
-      socket.destroy();
-      resolve({ ok: false, latencyMs: null });
-    });
-    socket.connect(port, host);
-  });
+async function probeLocalWireGuardInterface() {
+  const iface = process.env.WG_INTERFACE;
+  if (!iface) return null;
+  try {
+    const { stdout } = await execFileAsync('wg', ['show', iface, 'dump']);
+    const lines = stdout.trim().split('\n').filter(Boolean);
+    const peerLines = lines.slice(1);
+    let rxBytes = 0;
+    let txBytes = 0;
+    for (const line of peerLines) {
+      const parts = line.split('\t');
+      rxBytes += Number(parts[5] || 0);
+      txBytes += Number(parts[6] || 0);
+    }
+    return { ok: true, activePeers: peerLines.length, rxBytes, txBytes };
+  } catch {
+    return { ok: false, activePeers: 0, rxBytes: 0, txBytes: 0 };
+  }
 }
 
 export async function checkAllProvisionedNodes() {
@@ -67,7 +66,9 @@ export async function checkAllProvisionedNodes() {
     if (!node.endpoint || !node.server_public_key) {
       await pool.query(
         `UPDATE vpn_servers
-         SET health_status = 'pending_vps', last_health_check_at = NOW()
+         SET health_status = 'pending_vps',
+             latency_ms = NULL,
+             last_health_check_at = NOW()
          WHERE id = $1`,
         [node.id]
       );
@@ -82,29 +83,52 @@ export async function checkAllProvisionedNodes() {
          SET health_status = $2,
              latency_ms = $3,
              active_peers_reported = $4,
+             cpu_usage = $5,
+             ram_usage = $6,
+             network_rx_bytes = GREATEST(network_rx_bytes, $7),
+             network_tx_bytes = GREATEST(network_tx_bytes, $8),
              last_health_check_at = NOW()
          WHERE id = $1`,
-        [node.id, nextStatus, probe.latencyMs, probe.activePeers]
+        [
+          node.id,
+          nextStatus,
+          probe.latencyMs,
+          probe.activePeers,
+          probe.cpuUsage,
+          probe.ramUsage,
+          probe.rxBytes,
+          probe.txBytes
+        ]
       );
       if (!probe.ok && node.health_status !== 'offline') {
         await logBackendError({
           level: 'error',
           source: 'node-monitor',
           nodeCode: node.node_code,
-          message: `GCC WireGuard node ${node.node_code} (${node.endpoint}) failed health probe and went offline.`
+          message: `GCC WireGuard node ${node.node_code} (${node.endpoint}) failed WireGuard Node Agent health probe.`
         });
       }
-    } else {
-      const parsed = parseEndpoint(node.endpoint);
-      const tcpProbe = parsed ? await probeTcpReachability(parsed.host, 443) : { ok: false, latencyMs: null };
-      const nextStatus = tcpProbe.ok ? 'online' : 'offline';
+    } else if (process.env.WG_INTERFACE) {
+      const localWg = await probeLocalWireGuardInterface();
+      const nextStatus = localWg?.ok ? 'online' : 'offline';
       await pool.query(
         `UPDATE vpn_servers
          SET health_status = $2,
-             latency_ms = $3,
+             active_peers_reported = $3,
+             network_rx_bytes = GREATEST(network_rx_bytes, $4),
+             network_tx_bytes = GREATEST(network_tx_bytes, $5),
              last_health_check_at = NOW()
          WHERE id = $1`,
-        [node.id, nextStatus, tcpProbe.latencyMs]
+        [node.id, nextStatus, localWg?.activePeers || 0, localWg?.rxBytes || 0, localWg?.txBytes || 0]
+      );
+    } else {
+      // No live WireGuard agent_url or local WG_INTERFACE configured; cannot verify live tunnel readiness.
+      await pool.query(
+        `UPDATE vpn_servers
+         SET health_status = 'offline',
+             last_health_check_at = NOW()
+         WHERE id = $1`,
+        [node.id]
       );
     }
   }

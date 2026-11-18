@@ -26,7 +26,6 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
@@ -67,12 +66,16 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.ui.navigation.NexoraRoute
 import com.example.ui.navigation.nexoraDestinations
+import com.example.ui.screens.ConnectionHistoryScreen
+import com.example.ui.screens.ConnectionStatusScreen
 import com.example.ui.screens.HomeScreen
+import com.example.ui.screens.PingTestScreen
 import com.example.ui.screens.ProfileScreen
 import com.example.ui.screens.ServersScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.SpeedTestScreen
 import com.example.ui.screens.SubscriptionsScreen
+import com.example.ui.screens.SupportCenterScreen
 import com.example.ui.theme.ElectricBlue
 import com.example.ui.theme.NeonCyan
 import com.example.ui.theme.NexoraTheme
@@ -80,6 +83,7 @@ import com.example.ui.theme.ObsidianBlack
 import com.example.ui.theme.ObsidianSurface
 import com.example.ui.theme.TextSecondary
 import com.example.ui.viewmodel.AccountViewModel
+import com.example.ui.viewmodel.ConnectionHistoryViewModel
 import com.example.ui.viewmodel.MainViewModel
 import com.example.ui.viewmodel.ServersViewModel
 import com.example.ui.viewmodel.SpeedTestViewModel
@@ -103,6 +107,7 @@ private fun NexoraRootApp(widthSizeClass: WindowWidthSizeClass) {
     val serversViewModel: ServersViewModel = viewModel()
     val speedTestViewModel: SpeedTestViewModel = viewModel()
     val accountViewModel: AccountViewModel = viewModel()
+    val connectionHistoryViewModel: ConnectionHistoryViewModel = viewModel()
 
     val preferences by mainViewModel.preferences.collectAsStateWithLifecycle()
     val vpnState by mainViewModel.vpnState.collectAsStateWithLifecycle()
@@ -111,17 +116,30 @@ private fun NexoraRootApp(widthSizeClass: WindowWidthSizeClass) {
     val uiMessage by mainViewModel.uiMessage.collectAsStateWithLifecycle()
 
     val serversUiState by serversViewModel.uiState.collectAsStateWithLifecycle()
+    val gccSlotsHealth by serversViewModel.gccSlotsHealth.collectAsStateWithLifecycle()
+    val healthSummary by serversViewModel.healthSummary.collectAsStateWithLifecycle()
+    val probeResults by serversViewModel.probeResults.collectAsStateWithLifecycle()
+    val customProbeResult by serversViewModel.customProbeResult.collectAsStateWithLifecycle()
+    val isProbingCustom by serversViewModel.isProbingCustom.collectAsStateWithLifecycle()
+
     val speedProgress by speedTestViewModel.progress.collectAsStateWithLifecycle()
     val speedHistory by speedTestViewModel.filteredHistory.collectAsStateWithLifecycle()
     val speedHistoryFilter by speedTestViewModel.historyFilter.collectAsStateWithLifecycle()
     val speedComparison by speedTestViewModel.comparisonState.collectAsStateWithLifecycle()
     val speedEcoMode by speedTestViewModel.ecoMode.collectAsStateWithLifecycle()
     val speedIncludeUpload by speedTestViewModel.includeUpload.collectAsStateWithLifecycle()
+
     val sessions by accountViewModel.sessions.collectAsStateWithLifecycle()
     val authLoading by accountViewModel.authLoading.collectAsStateWithLifecycle()
     val authError by accountViewModel.authError.collectAsStateWithLifecycle()
     val authNotice by accountViewModel.authNotice.collectAsStateWithLifecycle()
     val apiHealth by accountViewModel.apiHealth.collectAsStateWithLifecycle()
+    val supportTickets by accountViewModel.supportTickets.collectAsStateWithLifecycle()
+    val supportLoading by accountViewModel.supportLoading.collectAsStateWithLifecycle()
+    val supportNotice by accountViewModel.supportNotice.collectAsStateWithLifecycle()
+    val supportError by accountViewModel.supportError.collectAsStateWithLifecycle()
+
+    val connectionHistory by connectionHistoryViewModel.history.collectAsStateWithLifecycle()
 
     val baseContext = LocalContext.current
     val baseConfig = LocalConfiguration.current
@@ -353,7 +371,11 @@ private fun NexoraRootApp(widthSizeClass: WindowWidthSizeClass) {
                                     },
                                     onNavigateServers = { navigateTopLevel(NexoraRoute.Servers) },
                                     onNavigateSettings = { navigateTopLevel(NexoraRoute.Settings) },
-                                    onImportConf = { confPickerLauncher.launch(arrayOf("*/*")) } ,
+                                    onNavigateStatus = { navController.navigate(NexoraRoute.ConnectionStatus) },
+                                    onNavigatePingTest = { navController.navigate(NexoraRoute.PingTest) },
+                                    onNavigateHistory = { navController.navigate(NexoraRoute.ConnectionHistory) },
+                                    onNavigateSupport = { navController.navigate(NexoraRoute.Support) },
+                                    onImportConf = { confPickerLauncher.launch(arrayOf("*/*")) },
                                     onDismissError = { mainViewModel.clearMessage() }
                                 )
                             }
@@ -361,6 +383,8 @@ private fun NexoraRootApp(widthSizeClass: WindowWidthSizeClass) {
                             composable<NexoraRoute.Servers> {
                                 ServersScreen(
                                     uiState = serversUiState,
+                                    gccSlotsHealth = gccSlotsHealth,
+                                    healthSummary = healthSummary,
                                     activeServerId = vpnState.activeServer?.id,
                                     vpnStatus = vpnState.status,
                                     isFindingBestServer = vpnState.isFindingBestServer,
@@ -383,6 +407,19 @@ private fun NexoraRootApp(widthSizeClass: WindowWidthSizeClass) {
                                     },
                                     onDeleteServer = serversViewModel::deleteServer,
                                     onDismissMessage = serversViewModel::clearMessage
+                                )
+                            }
+
+                            composable<NexoraRoute.ConnectionStatus> {
+                                ConnectionStatusScreen(
+                                    vpnState = vpnState,
+                                    preferences = preferences,
+                                    onToggleConnect = {
+                                        requestNotificationIfNeeded()
+                                        mainViewModel.onConnectClicked()
+                                    },
+                                    onRefreshIp = { mainViewModel.refreshIps() },
+                                    onBack = { navController.popBackStack() }
                                 )
                             }
 
@@ -410,6 +447,40 @@ private fun NexoraRootApp(widthSizeClass: WindowWidthSizeClass) {
                                 )
                             }
 
+                            composable<NexoraRoute.PingTest> {
+                                PingTestScreen(
+                                    servers = servers,
+                                    gccSlotsHealth = gccSlotsHealth,
+                                    healthSummary = healthSummary,
+                                    probeResults = probeResults,
+                                    customProbeResult = customProbeResult,
+                                    isPingingAll = serversUiState.isPingingAll,
+                                    isProbingCustom = isProbingCustom,
+                                    onMeasureAllPings = serversViewModel::measureAllPings,
+                                    onProbeCustomEndpoint = serversViewModel::probeCustomEndpoint,
+                                    onConnectBestServer = {
+                                        requestNotificationIfNeeded()
+                                        mainViewModel.connectBestServerByPing()
+                                        navigateTopLevel(NexoraRoute.Home)
+                                    },
+                                    onConnectServer = { server ->
+                                        requestNotificationIfNeeded()
+                                        mainViewModel.connectToServer(server)
+                                        navigateTopLevel(NexoraRoute.Home)
+                                    },
+                                    onBack = { navController.popBackStack() }
+                                )
+                            }
+
+                            composable<NexoraRoute.ConnectionHistory> {
+                                ConnectionHistoryScreen(
+                                    history = connectionHistory,
+                                    onDeleteEntry = connectionHistoryViewModel::deleteEntry,
+                                    onClearHistory = connectionHistoryViewModel::clearHistory,
+                                    onBack = { navController.popBackStack() }
+                                )
+                            }
+
                             composable<NexoraRoute.Subscriptions> {
                                 val app = baseContext.applicationContext as NexoraApp
                                 SubscriptionsScreen(
@@ -430,9 +501,12 @@ private fun NexoraRootApp(widthSizeClass: WindowWidthSizeClass) {
                                     preferences = preferences,
                                     apiHealth = apiHealth,
                                     onSaveAndTestApi = accountViewModel::saveAndTestBackendUrl,
+                                    onRefreshBackendHealth = accountViewModel::refreshBackendHealth,
                                     onLanguageSelected = accountViewModel::setLanguageMode,
                                     onSaveWireGuardSettings = accountViewModel::saveWireGuardSettings,
-                                    onToggleExcludedPackage = accountViewModel::toggleExcludedPackage
+                                    onToggleExcludedPackage = accountViewModel::toggleExcludedPackage,
+                                    onNavigateHistory = { navController.navigate(NexoraRoute.ConnectionHistory) },
+                                    onNavigateSupport = { navController.navigate(NexoraRoute.Support) }
                                 )
                             }
 
@@ -450,7 +524,23 @@ private fun NexoraRootApp(widthSizeClass: WindowWidthSizeClass) {
                                     onSignOut = accountViewModel::signOut,
                                     onRotateKey = accountViewModel::rotateWireGuardKey,
                                     onRevokeSession = accountViewModel::revokeSession,
-                                    onClearError = accountViewModel::clearAuthError
+                                    onClearError = accountViewModel::clearAuthError,
+                                    onNavigateHistory = { navController.navigate(NexoraRoute.ConnectionHistory) },
+                                    onNavigateSupport = { navController.navigate(NexoraRoute.Support) }
+                                )
+                            }
+
+                            composable<NexoraRoute.Support> {
+                                SupportCenterScreen(
+                                    preferences = preferences,
+                                    vpnState = vpnState,
+                                    apiHealth = apiHealth,
+                                    tickets = supportTickets,
+                                    supportLoading = supportLoading,
+                                    supportNotice = supportNotice,
+                                    supportError = supportError,
+                                    onSubmitTicket = accountViewModel::submitSupportTicket,
+                                    onBack = { navController.popBackStack() }
                                 )
                             }
                         }

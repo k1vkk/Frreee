@@ -42,7 +42,7 @@ class SpeedOfMeSpeedTestEngine(
     private val mainHandler = Handler(Looper.getMainLooper())
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
-    private val _progress = MutableStateFlow(SpeedTestProgress())
+    private val _progress = MutableStateFlow(SpeedTestProgress(provider = "speedofme"))
     val progress: StateFlow<SpeedTestProgress> = _progress.asStateFlow()
 
     private var webView: WebView? = null
@@ -53,6 +53,20 @@ class SpeedOfMeSpeedTestEngine(
     private var watchdogJob: Job? = null
     private var trafficTickerJob: Job? = null
     private var onCompletedCallback: ((SpeedTestProgress) -> Unit)? = null
+
+    fun resolveCredentials(
+        overrideApiKey: String? = null,
+        overrideDomain: String? = null
+    ): Pair<String, String>? {
+        val rawKey = (overrideApiKey?.takeIf { it.isNotBlank() } ?: BuildConfig.SPEEDOFME_API_KEY).trim()
+        val rawDomain = normalizeDomain(overrideDomain?.takeIf { it.isNotBlank() } ?: BuildConfig.SPEEDOFME_DOMAIN)
+        if (isPlaceholderOrBlank(rawKey, "YOUR_SPEEDOFME_API_KEY") ||
+            isPlaceholderOrBlank(rawDomain, "YOUR_REGISTERED_DOMAIN")
+        ) {
+            return null
+        }
+        return rawKey to rawDomain
+    }
 
     @SuppressLint("SetJavaScriptEnabled")
     fun attachWebView(view: WebView) {
@@ -123,10 +137,7 @@ class SpeedOfMeSpeedTestEngine(
             override fun shouldOverrideUrlLoading(
                 view: WebView?,
                 request: WebResourceRequest?
-            ): Boolean {
-                // Never open an external browser or navigate away from the speed test runner
-                return true
-            }
+            ): Boolean = true
 
             override fun onReceivedError(
                 view: WebView?,
@@ -184,33 +195,35 @@ class SpeedOfMeSpeedTestEngine(
     fun startTest(
         ecoMode: Boolean,
         includeUpload: Boolean,
+        overrideApiKey: String? = null,
+        overrideDomain: String? = null,
         onCompleted: (SpeedTestProgress) -> Unit
     ) {
         if (isRunning) return
 
-        val apiKey = BuildConfig.SPEEDOFME_API_KEY.trim()
-        val domain = normalizeDomain(BuildConfig.SPEEDOFME_DOMAIN)
         val sustainTime = if (ecoMode) 2 else 4
         activeSustainTimeSec = sustainTime
         includeUploadFlag = includeUpload
         onCompletedCallback = onCompleted
 
-        if (isPlaceholderOrBlank(apiKey, "YOUR_SPEEDOFME_API_KEY") ||
-            isPlaceholderOrBlank(domain, "YOUR_REGISTERED_DOMAIN")
-        ) {
+        val creds = resolveCredentials(overrideApiKey, overrideDomain)
+        if (creds == null) {
             _progress.value = SpeedTestProgress(
                 phase = SpeedTestPhase.ERROR,
                 sustainTimeSec = sustainTime,
+                provider = "speedofme",
                 errorType = SpeedTestErrorType.MISSING_CONFIGURATION,
                 errorMessage = "SPEEDOFME_API_KEY / SPEEDOFME_DOMAIN not configured"
             )
             return
         }
+        val (apiKey, domain) = creds
 
         if (!isNetworkConnected()) {
             _progress.value = SpeedTestProgress(
                 phase = SpeedTestPhase.ERROR,
                 sustainTimeSec = sustainTime,
+                provider = "speedofme",
                 errorType = SpeedTestErrorType.CONNECTION_UNAVAILABLE,
                 errorMessage = "No active internet connection"
             )
@@ -222,6 +235,7 @@ class SpeedOfMeSpeedTestEngine(
             _progress.value = SpeedTestProgress(
                 phase = SpeedTestPhase.ERROR,
                 sustainTimeSec = sustainTime,
+                provider = "speedofme",
                 errorType = SpeedTestErrorType.UNKNOWN,
                 errorMessage = "Speed test WebView engine is not attached"
             )
@@ -233,7 +247,8 @@ class SpeedOfMeSpeedTestEngine(
         _progress.value = SpeedTestProgress(
             phase = SpeedTestPhase.PREPARING,
             progressFraction = 0.04f,
-            sustainTimeSec = sustainTime
+            sustainTimeSec = sustainTime,
+            provider = "speedofme"
         )
 
         startTrafficTicker()
@@ -276,7 +291,8 @@ class SpeedOfMeSpeedTestEngine(
         if (resetToIdle) {
             _progress.value = SpeedTestProgress(
                 phase = SpeedTestPhase.IDLE,
-                sustainTimeSec = activeSustainTimeSec
+                sustainTimeSec = activeSustainTimeSec,
+                provider = "speedofme"
             )
         }
     }
@@ -368,7 +384,8 @@ class SpeedOfMeSpeedTestEngine(
                 publicIp = ip,
                 ispHostname = hostname,
                 dataUsedBytes = measureConsumedBytes(),
-                sustainTimeSec = activeSustainTimeSec
+                sustainTimeSec = activeSustainTimeSec,
+                provider = "speedofme"
             )
         }
 
@@ -394,7 +411,7 @@ class SpeedOfMeSpeedTestEngine(
                 normalized.contains("invalid account") ||
                 normalized.contains("invalid key") ||
                 normalized.contains("api key") ||
-                normalized.contains("account") && normalized.contains("invalid") -> {
+                (normalized.contains("account") && normalized.contains("invalid")) -> {
                 SpeedTestErrorType.INVALID_API_KEY
             }
             code == "1002" ||
@@ -437,6 +454,7 @@ class SpeedOfMeSpeedTestEngine(
         _progress.value = _progress.value.copy(
             phase = SpeedTestPhase.ERROR,
             dataUsedBytes = used,
+            provider = "speedofme",
             errorType = errorType,
             errorMessage = detail
         )
@@ -497,6 +515,7 @@ class SpeedOfMeSpeedTestEngine(
     private fun isPlaceholderOrBlank(value: String, placeholder: String): Boolean {
         return value.isBlank() ||
             value.equals(placeholder, ignoreCase = true) ||
+            value.contains("YOUR_", ignoreCase = true) ||
             value.contains("yourdomain", ignoreCase = true)
     }
 

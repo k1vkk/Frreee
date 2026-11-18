@@ -1,13 +1,15 @@
 {
   "name": "nexora-vpn-backend",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "NEXORA VPN Node.js + PostgreSQL API & WireGuard Peer Provisioning Server",
   "main": "src/server.js",
   "type": "module",
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "migrate": "node src/migrate.js"
+    "migrate": "node src/migrate.js",
+    "create-admin": "node scripts/create-admin.js",
+    "test": "node --test tests/*.test.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
