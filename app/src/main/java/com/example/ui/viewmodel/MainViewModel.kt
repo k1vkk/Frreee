@@ -7,6 +7,7 @@ import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.NexoraApp
+import com.example.NexoraConfig
 import com.example.R
 import com.example.billing.BillingUiState
 import com.example.data.local.ServerProfileEntity
@@ -59,9 +60,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         viewModelScope.launch {
+            vpnController.syncServersFromBackend()
             val prefs = prefsRepo.preferencesFlow.first()
-            if (prefs.autoConnect && prefs.selectedServerId.isNotBlank()) {
-                val saved = serverDao.getServerById(prefs.selectedServerId)
+            if (prefs.autoConnect) {
+                val saved = if (prefs.selectedServerId.isNotBlank()) {
+                    serverDao.getServerById(prefs.selectedServerId)
+                } else {
+                    serverDao.observeServers().first().firstOrNull { it.healthStatus != "offline" }
+                }
                 if (saved != null && saved.healthStatus != "offline" && vpnController.prepareVpnIntent() == null) {
                     vpnController.connect(saved)
                 }
@@ -80,11 +86,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 else -> {
                     val target = current.activeServer ?: servers.value.firstOrNull { it.healthStatus != "offline" }
-                    if (target == null) {
-                        _uiMessage.value = app.getString(R.string.setup_required_body)
-                        return@launch
+                    if (target != null) {
+                        connectToServer(target)
+                    } else {
+                        val fetched = vpnController.fetchBestOnlineServer()
+                        fetched.onSuccess { server ->
+                            connectToServer(server)
+                        }.onFailure { err ->
+                            _uiMessage.value = err.localizedMessage
+                                ?: app.getString(R.string.servers_empty_body)
+                        }
                     }
-                    connectToServer(target)
                 }
             }
         }
@@ -92,9 +104,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun connectBestServerByPing() {
         viewModelScope.launch {
-            val list = serverDao.observeServers().first()
+            var list = serverDao.observeServers().first()
             if (list.isEmpty()) {
-                _uiMessage.value = app.getString(R.string.servers_empty_body)
+                val syncResult = vpnController.syncServersFromBackend()
+                if (syncResult.isFailure) {
+                    _uiMessage.value = syncResult.exceptionOrNull()?.localizedMessage
+                        ?: app.getString(R.string.servers_empty_body)
+                    return@launch
+                }
+                list = serverDao.observeServers().first()
+            }
+            if (list.isEmpty()) {
+                _uiMessage.value = app.getString(R.string.error_no_reachable_server)
                 return@launch
             }
             val best = vpnController.findBestServerByPing(list)
@@ -108,7 +129,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun connectToServer(server: ServerProfileEntity) {
         viewModelScope.launch {
-            val prepareIntent = vpnController.prepareVpnIntent()
+            val bypassVpnDialogForDemo = NexoraConfig.IS_LOCAL_DEMO_MODE && server.sourceType == "BACKEND"
+            val prepareIntent = if (bypassVpnDialogForDemo) null else vpnController.prepareVpnIntent()
             if (prepareIntent != null) {
                 pendingServerToConnect = server
                 _vpnPermissionRequest.emit(prepareIntent)

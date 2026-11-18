@@ -38,9 +38,15 @@ interface ServerProfileDao {
 
 @Dao
 interface SpeedTestDao {
-    @Query("SELECT * FROM speed_test_results ORDER BY timestamp DESC LIMIT 25")
+    @Query("SELECT * FROM speed_test_results ORDER BY timestamp DESC LIMIT 50")
     fun observeHistory(): Flow<List<SpeedTestResultEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(result: SpeedTestResultEntity)
+
+    @Query("DELETE FROM speed_test_results WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
+    @Query("DELETE FROM speed_test_results")
+    suspend fun clearAll()
 }

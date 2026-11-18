@@ -1,5 +1,6 @@
 package com.example.data.remote
 
+import com.example.NexoraConfig
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import okhttp3.OkHttpClient
@@ -47,6 +48,9 @@ interface NexoraApiService {
 
     @GET("api/v1/servers")
     suspend fun getServers(): Response<ServersResponse>
+
+    @GET("api/v1/servers/best")
+    suspend fun getBestServer(): Response<BestServerResponse>
 
     @POST("api/v1/vpn/connect")
     suspend fun vpnConnect(
@@ -107,10 +111,11 @@ class NexoraApiClient {
         })
         .build()
 
-    fun createService(baseUrl: String): NexoraApiService? {
+    fun createService(baseUrl: String = NexoraConfig.NEXORA_API_BASE_URL): NexoraApiService? {
         val clean = baseUrl.trim().trimEnd('/')
-        if (!clean.startsWith("https://")) return null
-        if (clean.contains("localhost") || clean.contains("127.0.0.1")) return null
+        val isLocalAllowed = NexoraConfig.IS_LOCAL_DEMO_MODE && NexoraConfig.isLocalHostUrl(clean)
+        if (!clean.startsWith("https://") && !isLocalAllowed) return null
+        if (!isLocalAllowed && (clean.contains("localhost") || clean.contains("127.0.0.1"))) return null
         return try {
             Retrofit.Builder()
                 .baseUrl("$clean/")
@@ -123,7 +128,7 @@ class NexoraApiClient {
         }
     }
 
-    suspend fun fetchPublicIp(backendBaseUrl: String): Result<String> {
+    suspend fun fetchPublicIp(backendBaseUrl: String = NexoraConfig.NEXORA_API_BASE_URL): Result<String> {
         val service = createService(backendBaseUrl)
         if (service != null) {
             try {
@@ -144,18 +149,28 @@ class NexoraApiClient {
             okHttpClient.newCall(req).execute().use { response ->
                 val body = response.body?.string().orEmpty()
                 if (!response.isSuccessful) {
-                    return Result.failure(IllegalStateException("HTTP ${response.code}"))
+                    return if (NexoraConfig.IS_LOCAL_DEMO_MODE) {
+                        Result.success("192.168.1.42")
+                    } else {
+                        Result.failure(IllegalStateException("HTTP ${response.code}"))
+                    }
                 }
                 val parsed = moshi.adapter(IpResponse::class.java).fromJson(body)
                 val ip = parsed?.ip
                 if (!ip.isNullOrBlank()) {
                     Result.success(ip)
+                } else if (NexoraConfig.IS_LOCAL_DEMO_MODE) {
+                    Result.success("192.168.1.42")
                 } else {
                     Result.failure(IllegalStateException("Empty IP response"))
                 }
             }
         } catch (e: Exception) {
-            Result.failure(e)
+            if (NexoraConfig.IS_LOCAL_DEMO_MODE) {
+                Result.success("192.168.1.42")
+            } else {
+                Result.failure(e)
+            }
         }
     }
 }

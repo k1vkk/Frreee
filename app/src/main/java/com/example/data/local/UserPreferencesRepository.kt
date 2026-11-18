@@ -44,7 +44,9 @@ data class UserPreferences(
     val dnsLeakProtectionEnabled: Boolean = true,
     val excludedPackages: Set<String> = emptySet(),
     val totalRxBytes: Long = 0L,
-    val totalTxBytes: Long = 0L
+    val totalTxBytes: Long = 0L,
+    val speedTestEcoMode: Boolean = true,
+    val speedTestIncludeUpload: Boolean = true
 )
 
 class UserPreferencesRepository(private val context: Context) {
@@ -68,6 +70,8 @@ class UserPreferencesRepository(private val context: Context) {
         val EXCLUDED_PACKAGES = stringSetPreferencesKey("excluded_packages")
         val TOTAL_RX_BYTES = longPreferencesKey("total_rx_bytes")
         val TOTAL_TX_BYTES = longPreferencesKey("total_tx_bytes")
+        val SPEED_TEST_ECO_MODE = booleanPreferencesKey("speed_test_eco_mode")
+        val SPEED_TEST_INCLUDE_UPLOAD = booleanPreferencesKey("speed_test_include_upload")
     }
 
     val preferencesFlow: Flow<UserPreferences> = context.dataStore.data.map { prefs ->
@@ -90,7 +94,9 @@ class UserPreferencesRepository(private val context: Context) {
             dnsLeakProtectionEnabled = prefs[Keys.DNS_LEAK_PROTECTION] ?: true,
             excludedPackages = prefs[Keys.EXCLUDED_PACKAGES] ?: emptySet(),
             totalRxBytes = prefs[Keys.TOTAL_RX_BYTES] ?: 0L,
-            totalTxBytes = prefs[Keys.TOTAL_TX_BYTES] ?: 0L
+            totalTxBytes = prefs[Keys.TOTAL_TX_BYTES] ?: 0L,
+            speedTestEcoMode = prefs[Keys.SPEED_TEST_ECO_MODE] ?: true,
+            speedTestIncludeUpload = prefs[Keys.SPEED_TEST_INCLUDE_UPLOAD] ?: true
         )
     }
 
@@ -186,6 +192,18 @@ class UserPreferencesRepository(private val context: Context) {
         context.dataStore.edit { prefs ->
             prefs[Keys.TOTAL_RX_BYTES] = (prefs[Keys.TOTAL_RX_BYTES] ?: 0L) + rxDelta.coerceAtLeast(0L)
             prefs[Keys.TOTAL_TX_BYTES] = (prefs[Keys.TOTAL_TX_BYTES] ?: 0L) + txDelta.coerceAtLeast(0L)
+        }
+    }
+
+    suspend fun setSpeedTestEcoMode(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.SPEED_TEST_ECO_MODE] = enabled
+        }
+    }
+
+    suspend fun setSpeedTestIncludeUpload(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.SPEED_TEST_INCLUDE_UPLOAD] = enabled
         }
     }
 }

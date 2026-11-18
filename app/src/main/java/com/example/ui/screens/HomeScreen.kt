@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -28,19 +27,15 @@ import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.DataUsage
 import androidx.compose.material.icons.filled.Dns
-import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.NetworkPing
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.VerifiedUser
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -60,11 +55,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.NexoraConfig
 import com.example.R
 import com.example.data.local.UserPreferences
 import com.example.ui.components.GlowingConnectButton
 import com.example.ui.components.NexoraBrandLogo
-import com.example.ui.components.NexoraGlowCard
 import com.example.ui.components.TelemetryMetricTile
 import com.example.ui.theme.ElectricBlue
 import com.example.ui.theme.NeonCyan
@@ -87,15 +82,12 @@ import com.example.vpn.formatSpeedCompact
 fun HomeScreen(
     vpnState: VpnSessionState,
     preferences: UserPreferences,
-    hasServers: Boolean,
     isArabic: Boolean,
     onToggleConnect: () -> Unit,
     onConnectBestServer: () -> Unit,
     onRefreshIp: () -> Unit,
     onToggleLanguage: () -> Unit,
     onNavigateServers: () -> Unit,
-    onNavigateSettings: () -> Unit,
-    onImportConf: () -> Unit,
     onDismissError: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -175,59 +167,24 @@ fun HomeScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
-                // Setup prompt when neither Backend API nor local WireGuard profiles exist
-                AnimatedVisibility(visible = !hasServers) {
-                    NexoraGlowCard(
+                if (NexoraConfig.IS_LOCAL_DEMO_MODE) {
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = StatusAmber.copy(alpha = 0.12f),
+                        border = BorderStroke(1.dp, StatusAmber.copy(alpha = 0.45f)),
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 14.dp),
-                        borderColor = ElectricBlue.copy(alpha = 0.6f)
+                            .padding(bottom = 10.dp)
+                            .testTag("local_demo_mode_badge")
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Filled.Shield,
-                                contentDescription = null,
-                                tint = NeonCyan,
-                                modifier = Modifier.size(22.dp)
-                            )
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Text(
-                                text = stringResource(R.string.setup_required_title),
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onBackground
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = stringResource(R.string.setup_required_body),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = TextSecondary
+                            text = stringResource(R.string.label_local_demo_mode),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = StatusAmber,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
                         )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Button(
-                                onClick = onNavigateSettings,
-                                colors = ButtonDefaults.buttonColors(containerColor = ElectricBlue),
-                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-                                modifier = Modifier.testTag("home_configure_api_btn")
-                            ) {
-                                Icon(Icons.Filled.Settings, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text(stringResource(R.string.action_configure_api))
-                            }
-                            OutlinedButton(
-                                onClick = onImportConf,
-                                border = BorderStroke(1.dp, NeonCyan.copy(alpha = 0.7f)),
-                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-                                modifier = Modifier.testTag("home_import_conf_btn")
-                            ) {
-                                Icon(Icons.Filled.FileOpen, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text(stringResource(R.string.action_import_conf), color = NeonCyan)
-                            }
-                        }
                     }
                 }
 
@@ -273,7 +230,7 @@ fun HomeScreen(
                                 vpnState = vpnState,
                                 onNavigateServers = onNavigateServers
                             )
-                            if (hasServers && vpnState.status != VpnConnectionStatus.CONNECTED) {
+                            if (vpnState.status != VpnConnectionStatus.CONNECTED) {
                                 Spacer(modifier = Modifier.height(8.dp))
                                 BestPingButton(
                                     isSearching = vpnState.isFindingBestServer,
@@ -311,7 +268,7 @@ fun HomeScreen(
                             vpnState = vpnState,
                             onNavigateServers = onNavigateServers
                         )
-                        if (hasServers && vpnState.status != VpnConnectionStatus.CONNECTED) {
+                        if (vpnState.status != VpnConnectionStatus.CONNECTED) {
                             Spacer(modifier = Modifier.height(8.dp))
                             BestPingButton(
                                 isSearching = vpnState.isFindingBestServer,

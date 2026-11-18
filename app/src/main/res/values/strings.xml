@@ -91,23 +91,70 @@
     <string name="field_allowed_ips">Allowed IPs (e.g. 0.0.0.0/0, ::/0)</string>
     <string name="action_save">Save</string>
 
-    <!-- Speed Test Screen -->
-    <string name="speed_test_title">Network Diagnostics</string>
-    <string name="speed_test_subtitle">Live TCP latency, jitter, and HTTP throughput measurement</string>
-    <string name="phase_idle">READY</string>
-    <string name="phase_ping">MEASURING LATENCY</string>
-    <string name="phase_download">TESTING DOWNLOAD</string>
-    <string name="phase_upload">TESTING UPLOAD</string>
-    <string name="phase_complete">DIAGNOSTIC COMPLETE</string>
-    <string name="phase_error">DIAGNOSTIC FAILED</string>
+    <!-- Speed Test Screen (SpeedOf.Me) -->
+    <string name="speed_test_title">Speed Diagnostics</string>
+    <string name="speed_test_subtitle">Powered by SpeedOf.Me — real throughput, latency &amp; jitter</string>
+    <string name="label_direct_isp">Direct ISP</string>
+    <string name="phase_idle">READY TO TEST</string>
+    <string name="phase_preparing">CONNECTING ENGINE…</string>
+    <string name="phase_ping">LATENCY &amp; JITTER</string>
+    <string name="phase_download">DOWNLOAD TEST</string>
+    <string name="phase_upload">UPLOAD TEST</string>
+    <string name="phase_complete">TEST COMPLETE</string>
+    <string name="phase_error">TEST FAILED</string>
+    <string name="step_ping">Ping</string>
+    <string name="step_download">Download</string>
+    <string name="step_upload">Upload</string>
     <string name="action_start_test">Start Speed Test</string>
     <string name="action_stop_test">Stop Test</string>
+    <string name="action_retry_test">Retry Test</string>
     <string name="label_jitter">Jitter</string>
     <string name="label_mbps">Mbps</string>
-    <string name="label_history">Recent Measurements</string>
-    <string name="history_empty">Run a diagnostic to record real throughput and latency metrics.</string>
+    <string name="label_peak_speed">Peak: ↓ %.1f / ↑ %.1f Mbps</string>
+    <string name="label_test_server_node">Test Node: %1$s</string>
+    <string name="label_test_data_consumed">Data Used: %1$s</string>
+
+    <!-- Data Optimization (Low-Bandwidth / Yemen) -->
+    <string name="label_data_mode">Data Optimization</string>
+    <string name="mode_eco_label">Eco Saver (2s)</string>
+    <string name="mode_standard_label">Standard (4s)</string>
+    <string name="toggle_include_upload">Include Upload</string>
+    <string name="eco_mode_hint">Eco mode minimizes data consumption &amp; duration for slow or limited mobile connections.</string>
+
+    <!-- VPN Before vs After Comparison -->
+    <string name="comparison_title">VPN Impact Comparison</string>
+    <string name="comparison_before_vpn">Before VPN (Direct)</string>
+    <string name="comparison_after_vpn">After VPN (Encrypted)</string>
+    <string name="comparison_custom_pair">Custom Comparison</string>
+    <string name="comparison_reset">Auto Pair</string>
+    <string name="comparison_needs_pair">Run one test with VPN disconnected and another with NEXORA VPN connected to compare download, upload, ping, and jitter.</string>
+    <string name="comparison_not_tested_yet">Not tested yet</string>
+    <string name="comparison_delta_download">Download Diff</string>
+    <string name="comparison_delta_upload">Upload Diff</string>
+    <string name="comparison_delta_ping">Latency Diff</string>
+    <string name="comparison_delta_jitter">Jitter Diff</string>
+
+    <!-- Test History -->
+    <string name="label_history">Test History</string>
+    <string name="history_empty">No speed tests saved yet. Run a test to record real SpeedOf.Me metrics locally.</string>
+    <string name="history_clear_all">Clear All</string>
+    <string name="filter_history_all">All</string>
+    <string name="filter_history_direct">Direct</string>
+    <string name="filter_history_vpn">VPN</string>
+    <string name="action_set_before">Set A</string>
+    <string name="action_set_after">Set B</string>
     <string name="label_vpn_on">VPN ON</string>
     <string name="label_vpn_off">DIRECT</string>
+
+    <!-- SpeedOf.Me Error Messages -->
+    <string name="speed_err_missing_config">SpeedOf.Me API credentials are not configured yet. Set SPEEDOFME_API_KEY and SPEEDOFME_DOMAIN in AI Studio Secrets.</string>
+    <string name="speed_err_offline">Internet connection is unavailable. Check Wi-Fi, mobile data, or VPN status and retry.</string>
+    <string name="speed_err_invalid_key">SpeedOf.Me API key was rejected as invalid. Verify SPEEDOFME_API_KEY in AI Studio Secrets.</string>
+    <string name="speed_err_unauthorized_domain">This domain is not authorized for your SpeedOf.Me API key. Verify SPEEDOFME_DOMAIN matches your SpeedOf.Me dashboard.</string>
+    <string name="speed_err_script_load">Unable to load the official SpeedOf.Me test script. Check network access or firewall and retry.</string>
+    <string name="speed_err_timeout">Speed test timed out due to slow or unresponsive connection. Try Eco Saver mode and retry.</string>
+    <string name="speed_err_unknown">Speed test failed: %1$s</string>
+
 
     <!-- Subscriptions Screen -->
     <string name="plans_title">NEXORA Pro Plans</string>

@@ -36,6 +36,13 @@ data class SpeedTestResultEntity(
     val jitterMs: Int,
     val downloadMbps: Double,
     val uploadMbps: Double,
+    val maxDownloadMbps: Double = 0.0,
+    val maxUploadMbps: Double = 0.0,
     val vpnActive: Boolean,
-    val serverLabel: String
+    val serverLabel: String,
+    val testServer: String = "",
+    val publicIp: String = "",
+    val ispHostname: String = "",
+    val dataUsedBytes: Long = 0L,
+    val sustainTimeSec: Int = 2
 )

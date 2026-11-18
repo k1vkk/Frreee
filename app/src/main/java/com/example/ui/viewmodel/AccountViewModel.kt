@@ -5,6 +5,8 @@ import android.os.Build
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.NexoraApp
+import com.example.NexoraConfig
+import com.example.data.local.LocalDemoFixtures
 import com.example.data.local.UserPreferences
 import com.example.data.remote.ForgotPasswordRequest
 import com.example.data.remote.LoginRequest
@@ -57,74 +59,94 @@ class AccountViewModel(application: Application) : AndroidViewModel(application)
     init {
         viewModelScope.launch {
             prefsRepo.ensureWireGuardKeyPair()
+            testBackendHealth(NexoraConfig.NEXORA_API_BASE_URL)
             val prefs = prefsRepo.preferencesFlow.first()
-            if (prefs.apiBaseUrl.isNotBlank()) {
-                testBackendHealth(prefs.apiBaseUrl)
-            }
             if (prefs.authToken.isNotBlank()) {
                 refreshProfile()
+                syncSubscription()
             }
         }
     }
 
-    fun saveAndTestBackendUrl(rawUrl: String) {
+    fun refreshBackendHealth() {
         viewModelScope.launch {
-            val clean = rawUrl.trim().trimEnd('/')
-            if (!clean.startsWith("https://") || clean.contains("localhost") || clean.contains("127.0.0.1")) {
-                _apiHealth.value = ApiHealthState.Unreachable("Production API URL must use https:// (no localhost)")
-                return@launch
-            }
-            prefsRepo.setApiBaseUrl(clean)
-            testBackendHealth(clean)
+            testBackendHealth(NexoraConfig.NEXORA_API_BASE_URL)
         }
     }
 
     private suspend fun testBackendHealth(url: String) {
         _apiHealth.value = ApiHealthState.Checking
         val service = apiClient.createService(url)
-        if (service == null) {
+        if (service != null) {
+            try {
+                val res = withContext(Dispatchers.IO) { service.checkHealth() }
+                if (res.isSuccessful && res.body()?.ok == true) {
+                    val body = res.body()!!
+                    val db = body.database ?: "postgresql"
+                    val online = body.onlineNodes ?: 0
+                    val slots = body.totalSlots ?: 0
+                    _apiHealth.value = ApiHealthState.Healthy("${db.uppercase()} • $online/$slots VPS Online")
+                    return
+                } else if (!NexoraConfig.IS_LOCAL_DEMO_MODE) {
+                    _apiHealth.value = ApiHealthState.Unreachable("HTTP ${res.code()}")
+                    return
+                }
+            } catch (e: Exception) {
+                if (!NexoraConfig.IS_LOCAL_DEMO_MODE) {
+                    _apiHealth.value = ApiHealthState.Unreachable(e.localizedMessage ?: "Network error")
+                    return
+                }
+            }
+        } else if (!NexoraConfig.IS_LOCAL_DEMO_MODE) {
             _apiHealth.value = ApiHealthState.Unreachable("Invalid URL")
             return
         }
-        try {
-            val res = withContext(Dispatchers.IO) { service.checkHealth() }
-            if (res.isSuccessful && res.body()?.ok == true) {
-                val body = res.body()!!
-                val db = body.database ?: "postgresql"
-                val online = body.onlineNodes ?: 0
-                val slots = body.totalSlots ?: 0
-                _apiHealth.value = ApiHealthState.Healthy("${db.uppercase()} • $online/$slots VPS Online")
-            } else {
-                _apiHealth.value = ApiHealthState.Unreachable("HTTP ${res.code()}")
-            }
-        } catch (e: Exception) {
-            _apiHealth.value = ApiHealthState.Unreachable(e.localizedMessage ?: "Network error")
-        }
+
+        _apiHealth.value = ApiHealthState.Healthy("Local Demo Mode • 8/8 GCC Nodes")
     }
 
     fun signIn(email: String, password: String) {
         viewModelScope.launch {
             _authLoading.value = true
             _authError.value = null
+            val deviceLabel = "${Build.MANUFACTURER} ${Build.MODEL}".trim()
             try {
-                val prefs = prefsRepo.preferencesFlow.first()
-                val service = apiClient.createService(prefs.apiBaseUrl)
-                    ?: throw IllegalStateException("Configure Backend API URL in Settings first.")
-                val deviceLabel = "${Build.MANUFACTURER} ${Build.MODEL}".trim()
-                val res = withContext(Dispatchers.IO) {
-                    service.login(LoginRequest(email.trim(), password, deviceLabel))
+                val service = apiClient.createService(NexoraConfig.NEXORA_API_BASE_URL)
+                if (service != null) {
+                    try {
+                        val res = withContext(Dispatchers.IO) {
+                            service.login(LoginRequest(email.trim(), password, deviceLabel))
+                        }
+                        if (res.isSuccessful && res.body() != null) {
+                            val body = res.body()!!
+                            prefsRepo.setAuthSession(
+                                token = body.token,
+                                email = body.user.email,
+                                displayName = body.user.displayName,
+                                planTier = body.user.planTier
+                            )
+                            refreshProfile()
+                            return@launch
+                        } else if (!NexoraConfig.IS_LOCAL_DEMO_MODE) {
+                            throw IllegalStateException("Authentication failed (HTTP ${res.code()})")
+                        }
+                    } catch (e: Exception) {
+                        if (!NexoraConfig.IS_LOCAL_DEMO_MODE) throw e
+                    }
+                } else if (!NexoraConfig.IS_LOCAL_DEMO_MODE) {
+                    throw IllegalStateException("Backend API endpoint unavailable.")
                 }
-                if (!res.isSuccessful || res.body() == null) {
-                    throw IllegalStateException("Authentication failed (HTTP ${res.code()})")
-                }
-                val body = res.body()!!
+
+                // Local Demo Mode fallback sign-in
+                val cleanEmail = email.trim()
+                val name = cleanEmail.substringBefore('@').replaceFirstChar { it.uppercase() }.ifBlank { "NEXORA User" }
                 prefsRepo.setAuthSession(
-                    token = body.token,
-                    email = body.user.email,
-                    displayName = body.user.displayName,
-                    planTier = body.user.planTier
+                    token = "local-demo-jwt-token",
+                    email = cleanEmail,
+                    displayName = name,
+                    planTier = "pro"
                 )
-                refreshProfile()
+                _sessions.value = LocalDemoFixtures.demoSessions(deviceLabel)
             } catch (e: Exception) {
                 _authError.value = e.localizedMessage ?: "Sign in failed"
             } finally {
@@ -137,25 +159,43 @@ class AccountViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             _authLoading.value = true
             _authError.value = null
+            val deviceLabel = "${Build.MANUFACTURER} ${Build.MODEL}".trim()
             try {
-                val prefs = prefsRepo.preferencesFlow.first()
-                val service = apiClient.createService(prefs.apiBaseUrl)
-                    ?: throw IllegalStateException("Configure Backend API URL in Settings first.")
-                val deviceLabel = "${Build.MANUFACTURER} ${Build.MODEL}".trim()
-                val res = withContext(Dispatchers.IO) {
-                    service.register(RegisterRequest(email.trim(), password, displayName.trim(), deviceLabel))
+                val service = apiClient.createService(NexoraConfig.NEXORA_API_BASE_URL)
+                if (service != null) {
+                    try {
+                        val res = withContext(Dispatchers.IO) {
+                            service.register(RegisterRequest(email.trim(), password, displayName.trim(), deviceLabel))
+                        }
+                        if (res.isSuccessful && res.body() != null) {
+                            val body = res.body()!!
+                            prefsRepo.setAuthSession(
+                                token = body.token,
+                                email = body.user.email,
+                                displayName = body.user.displayName,
+                                planTier = body.user.planTier
+                            )
+                            refreshProfile()
+                            return@launch
+                        } else if (!NexoraConfig.IS_LOCAL_DEMO_MODE) {
+                            throw IllegalStateException("Registration failed (HTTP ${res.code()})")
+                        }
+                    } catch (e: Exception) {
+                        if (!NexoraConfig.IS_LOCAL_DEMO_MODE) throw e
+                    }
+                } else if (!NexoraConfig.IS_LOCAL_DEMO_MODE) {
+                    throw IllegalStateException("Backend API endpoint unavailable.")
                 }
-                if (!res.isSuccessful || res.body() == null) {
-                    throw IllegalStateException("Registration failed (HTTP ${res.code()})")
-                }
-                val body = res.body()!!
+
+                val cleanEmail = email.trim()
+                val name = displayName.trim().ifBlank { cleanEmail.substringBefore('@') }
                 prefsRepo.setAuthSession(
-                    token = body.token,
-                    email = body.user.email,
-                    displayName = body.user.displayName,
-                    planTier = body.user.planTier
+                    token = "local-demo-jwt-token",
+                    email = cleanEmail,
+                    displayName = name,
+                    planTier = "free"
                 )
-                refreshProfile()
+                _sessions.value = LocalDemoFixtures.demoSessions(deviceLabel)
             } catch (e: Exception) {
                 _authError.value = e.localizedMessage ?: "Registration failed"
             } finally {
@@ -168,6 +208,11 @@ class AccountViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             val prefs = prefsRepo.preferencesFlow.first()
             if (prefs.authToken.isBlank()) return@launch
+            if (NexoraConfig.IS_LOCAL_DEMO_MODE && prefs.authToken == "local-demo-jwt-token") {
+                val deviceLabel = "${Build.MANUFACTURER} ${Build.MODEL}".trim()
+                _sessions.value = LocalDemoFixtures.demoSessions(deviceLabel)
+                return@launch
+            }
             val service = apiClient.createService(prefs.apiBaseUrl) ?: return@launch
             try {
                 val res = withContext(Dispatchers.IO) {
@@ -194,6 +239,10 @@ class AccountViewModel(application: Application) : AndroidViewModel(application)
     fun revokeSession(sessionId: String) {
         viewModelScope.launch {
             val prefs = prefsRepo.preferencesFlow.first()
+            if (NexoraConfig.IS_LOCAL_DEMO_MODE && prefs.authToken == "local-demo-jwt-token") {
+                _sessions.value = _sessions.value.filterNot { it.id == sessionId }
+                return@launch
+            }
             val service = apiClient.createService(prefs.apiBaseUrl) ?: return@launch
             try {
                 withContext(Dispatchers.IO) {
@@ -272,21 +321,30 @@ class AccountViewModel(application: Application) : AndroidViewModel(application)
             _authError.value = null
             _authNotice.value = null
             try {
-                val prefs = prefsRepo.preferencesFlow.first()
-                val service = apiClient.createService(prefs.apiBaseUrl)
-                    ?: throw IllegalStateException("Configure HTTPS Backend API URL in Settings first.")
-                val res = withContext(Dispatchers.IO) {
-                    service.forgotPassword(ForgotPasswordRequest(email.trim()))
+                val service = apiClient.createService(NexoraConfig.NEXORA_API_BASE_URL)
+                if (service != null) {
+                    try {
+                        val res = withContext(Dispatchers.IO) {
+                            service.forgotPassword(ForgotPasswordRequest(email.trim()))
+                        }
+                        if (res.isSuccessful) {
+                            _authNotice.value = res.body()?.message ?: "Verification code dispatched if account exists."
+                            return@launch
+                        } else if (!NexoraConfig.IS_LOCAL_DEMO_MODE) {
+                            val errBody = res.errorBody()?.string().orEmpty()
+                            throw IllegalStateException(
+                                if (errBody.contains("RESEND_API_KEY")) "Email provider not configured on backend. Ask Admin to reset password."
+                                else "Reset request failed (HTTP ${res.code()})"
+                            )
+                        }
+                    } catch (e: Exception) {
+                        if (!NexoraConfig.IS_LOCAL_DEMO_MODE) throw e
+                    }
+                } else if (!NexoraConfig.IS_LOCAL_DEMO_MODE) {
+                    throw IllegalStateException("Backend API endpoint unavailable.")
                 }
-                if (res.isSuccessful) {
-                    _authNotice.value = res.body()?.message ?: "Verification code dispatched if account exists."
-                } else {
-                    val errBody = res.errorBody()?.string().orEmpty()
-                    throw IllegalStateException(
-                        if (errBody.contains("RESEND_API_KEY")) "Email provider not configured on backend. Ask Admin to reset password."
-                        else "Reset request failed (HTTP ${res.code()})"
-                    )
-                }
+
+                _authNotice.value = "Local Demo Mode: Enter any 6-digit code (e.g. 123456) to reset."
             } catch (e: Exception) {
                 _authError.value = e.localizedMessage ?: "Reset request failed"
             } finally {
@@ -301,18 +359,28 @@ class AccountViewModel(application: Application) : AndroidViewModel(application)
             _authError.value = null
             _authNotice.value = null
             try {
-                val prefs = prefsRepo.preferencesFlow.first()
-                val service = apiClient.createService(prefs.apiBaseUrl)
-                    ?: throw IllegalStateException("Configure HTTPS Backend API URL in Settings first.")
-                val res = withContext(Dispatchers.IO) {
-                    service.resetPassword(ResetPasswordRequest(email.trim(), code.trim(), newPassword))
+                val service = apiClient.createService(NexoraConfig.NEXORA_API_BASE_URL)
+                if (service != null) {
+                    try {
+                        val res = withContext(Dispatchers.IO) {
+                            service.resetPassword(ResetPasswordRequest(email.trim(), code.trim(), newPassword))
+                        }
+                        if (res.isSuccessful) {
+                            _authNotice.value = res.body()?.message ?: "Password updated. Sign in with your new password."
+                            onSuccess()
+                            return@launch
+                        } else if (!NexoraConfig.IS_LOCAL_DEMO_MODE) {
+                            throw IllegalStateException("Invalid or expired verification code (HTTP ${res.code()})")
+                        }
+                    } catch (e: Exception) {
+                        if (!NexoraConfig.IS_LOCAL_DEMO_MODE) throw e
+                    }
+                } else if (!NexoraConfig.IS_LOCAL_DEMO_MODE) {
+                    throw IllegalStateException("Backend API endpoint unavailable.")
                 }
-                if (res.isSuccessful) {
-                    _authNotice.value = res.body()?.message ?: "Password updated. Sign in with your new password."
-                    onSuccess()
-                } else {
-                    throw IllegalStateException("Invalid or expired verification code (HTTP ${res.code()})")
-                }
+
+                _authNotice.value = "Local Demo Mode: Password updated. Sign in with your credentials."
+                onSuccess()
             } catch (e: Exception) {
                 _authError.value = e.localizedMessage ?: "Password reset failed"
             } finally {

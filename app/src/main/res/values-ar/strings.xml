@@ -91,23 +91,70 @@
     <string name="field_allowed_ips">عناوين Allowed IPs</string>
     <string name="action_save">حفظ</string>
 
-    <!-- Speed Test Screen -->
+    <!-- Speed Test Screen (SpeedOf.Me) -->
     <string name="speed_test_title">اختبار سرعة الشبكة</string>
-    <string name="speed_test_subtitle">قياس حقيقي لزمن الاستجابة TCP والتذبذب وسرعة النقل</string>
-    <string name="phase_idle">جاهز للفحص</string>
-    <string name="phase_ping">جاري قياس Ping</string>
-    <string name="phase_download">جاري اختبار التنزيل</string>
-    <string name="phase_upload">جاري اختبار الرفع</string>
-    <string name="phase_complete">اكتمل الاختبار</string>
-    <string name="phase_error">فشل الاختبار</string>
-    <string name="action_start_test">بدء الاختبار</string>
-    <string name="action_stop_test">إيقاف</string>
-    <string name="label_jitter">التذبذب</string>
+    <string name="speed_test_subtitle">مدعوم بـ SpeedOf.Me — قياس حقيقي للسرعة وزمن الاستجابة والتذبذب</string>
+    <string name="label_direct_isp">اتصال مباشر</string>
+    <string name="phase_idle">جاهز للاختبار</string>
+    <string name="phase_preparing">جاري تهيئة المحرك…</string>
+    <string name="phase_ping">قياس Ping والتذبذب</string>
+    <string name="phase_download">اختبار سرعة التنزيل</string>
+    <string name="phase_upload">اختبار سرعة الرفع</string>
+    <string name="phase_complete">اكتمل الاختبار بنجاح</string>
+    <string name="phase_error">تعذر إتمام الاختبار</string>
+    <string name="step_ping">Ping</string>
+    <string name="step_download">التنزيل</string>
+    <string name="step_upload">الرفع</string>
+    <string name="action_start_test">بدء اختبار السرعة</string>
+    <string name="action_stop_test">إيقاف الاختبار</string>
+    <string name="action_retry_test">إعادة المحاولة</string>
+    <string name="label_jitter">التذبذب Jitter</string>
     <string name="label_mbps">ميغابت/ث</string>
-    <string name="label_history">سجل القياسات الأخيرة</string>
-    <string name="history_empty">شغّل الاختبار لتسجيل قياسات السرعة وزمن الاستجابة الفعلية.</string>
+    <string name="label_peak_speed">الذروة: ↓ %.1f / ↑ %.1f ميغابت/ث</string>
+    <string name="label_test_server_node">خادم القياس: %1$s</string>
+    <string name="label_test_data_consumed">البيانات المستهلكة: %1$s</string>
+
+    <!-- Data Optimization (Low-Bandwidth / Yemen) -->
+    <string name="label_data_mode">توفير البيانات والوقت</string>
+    <string name="mode_eco_label">الوضع الاقتصادي (2 ث)</string>
+    <string name="mode_standard_label">الوضع القياسي (4 ث)</string>
+    <string name="toggle_include_upload">اختبار الرفع</string>
+    <string name="eco_mode_hint">الوضع الاقتصادي يقلل استهلاك الرصيد وزمن الاختبار ليناسب الشبكات البطيئة والمحدودة.</string>
+
+    <!-- VPN Before vs After Comparison -->
+    <string name="comparison_title">مقارنة السرعة قبل وبعد VPN</string>
+    <string name="comparison_before_vpn">قبل VPN (مباشر)</string>
+    <string name="comparison_after_vpn">بعد VPN (مشفر)</string>
+    <string name="comparison_custom_pair">مقارنة مخصصة</string>
+    <string name="comparison_reset">اقتران تلقائي</string>
+    <string name="comparison_needs_pair">أجرِ اختباراً قبل تشغيل VPN واختباراً آخر بعد الاتصال بـ NEXORA VPN لحساب الفرق في التنزيل والرفع وPing والتذبذب.</string>
+    <string name="comparison_not_tested_yet">لم يُقَس بعد</string>
+    <string name="comparison_delta_download">فرق التنزيل</string>
+    <string name="comparison_delta_upload">فرق الرفع</string>
+    <string name="comparison_delta_ping">فرق زمن الاستجابة</string>
+    <string name="comparison_delta_jitter">فرق التذبذب</string>
+
+    <!-- Test History -->
+    <string name="label_history">سجل الاختبارات السابقة</string>
+    <string name="history_empty">لا توجد اختبارات محفوظة بعد. شغّل الاختبار لحفظ النتائج الفعلية محلياً ومقارنتها.</string>
+    <string name="history_clear_all">مسح السجل</string>
+    <string name="filter_history_all">الكل</string>
+    <string name="filter_history_direct">مباشر</string>
+    <string name="filter_history_vpn">عبر VPN</string>
+    <string name="action_set_before">تعيين أ</string>
+    <string name="action_set_after">تعيين ب</string>
     <string name="label_vpn_on">عبر VPN</string>
     <string name="label_vpn_off">مباشر</string>
+
+    <!-- SpeedOf.Me Error Messages -->
+    <string name="speed_err_missing_config">بيانات SpeedOf.Me API غير مضبوطة بعد. أضف SPEEDOFME_API_KEY و SPEEDOFME_DOMAIN في لوحة Secrets.</string>
+    <string name="speed_err_offline">الاتصال بالإنترنت غير متاح حالياً. تحقق من الشبكة أو VPN ثم أعد المحاولة.</string>
+    <string name="speed_err_invalid_key">مفتاح SpeedOf.Me API غير صالح. تأكد من صحة SPEEDOFME_API_KEY في لوحة Secrets.</string>
+    <string name="speed_err_unauthorized_domain">النطاق المسجل غير مصرح به لمفتاح SpeedOf.Me. تأكد أن SPEEDOFME_DOMAIN يطابق النطاق في حسابك.</string>
+    <string name="speed_err_script_load">تعذر تحميل سكربت SpeedOf.Me الرسمي. تحقق من الشبكة ثم أعد المحاولة.</string>
+    <string name="speed_err_timeout">انتهت مهلة الاختبار بسبب بطء أو انقطاع الشبكة. جرّب الوضع الاقتصادي وأعد المحاولة.</string>
+    <string name="speed_err_unknown">فشل اختبار السرعة: %1$s</string>
+
 
     <!-- Subscriptions Screen -->
     <string name="plans_title">باقات NEXORA الاحترافية</string>

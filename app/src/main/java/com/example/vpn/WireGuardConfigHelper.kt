@@ -65,7 +65,8 @@ object WireGuardConfigHelper {
         customDns: String,
         dnsLeakProtectionEnabled: Boolean,
         mtu: Int,
-        excludedPackages: Set<String>
+        excludedPackages: Set<String>,
+        wgQuickConfigFromBackend: String? = null
     ): Config {
         val effectiveDns = if (dnsLeakProtectionEnabled) {
             customDns.ifBlank { profile.dnsServers.ifBlank { STRICT_DUAL_STACK_DNS } }
@@ -73,43 +74,33 @@ object WireGuardConfigHelper {
             customDns.ifBlank { profile.dnsServers }
         }
 
+        if (!wgQuickConfigFromBackend.isNullOrBlank()) {
+            val injectedRaw = injectPrivateKeyIntoWgQuick(wgQuickConfigFromBackend, privateKeyBase64)
+            val parsedResult = runCatching {
+                Config.parse(ByteArrayInputStream(injectedRaw.toByteArray(Charsets.UTF_8)))
+            }.getOrNull()
+            if (parsedResult != null && parsedResult.peers.isNotEmpty()) {
+                return applyPolicyOverrides(
+                    baseConfig = parsedResult,
+                    fallbackPrivateKey = privateKeyBase64,
+                    effectiveDns = effectiveDns,
+                    dnsLeakProtectionEnabled = dnsLeakProtectionEnabled,
+                    mtu = mtu,
+                    excludedPackages = excludedPackages
+                )
+            }
+        }
+
         if (profile.sourceType == "IMPORTED_CONF" && profile.rawConfig.isNotBlank()) {
             val baseConfig = Config.parse(ByteArrayInputStream(profile.rawConfig.toByteArray(Charsets.UTF_8)))
-            val ifaceBuilder = Interface.Builder().apply {
-                parsePrivateKey(baseConfig.`interface`.keyPair.privateKey.toBase64())
-                val addr = baseConfig.`interface`.addresses.joinToString(", ") { it.toString() }
-                if (addr.isNotBlank()) parseAddresses(addr)
-                val dns = if (dnsLeakProtectionEnabled) {
-                    effectiveDns.ifBlank { STRICT_DUAL_STACK_DNS }
-                } else {
-                    baseConfig.`interface`.dnsServers.joinToString(", ") { it.hostAddress ?: "" }
-                        .ifBlank { effectiveDns }
-                }
-                if (dns.isNotBlank()) parseDnsServers(dns)
-                setMtu(mtu)
-                if (excludedPackages.isNotEmpty()) {
-                    excludeApplications(excludedPackages)
-                }
-            }
-            val cfgBuilder = Config.Builder().setInterface(ifaceBuilder.build())
-            baseConfig.peers.forEach { basePeer ->
-                if (dnsLeakProtectionEnabled) {
-                    // Enforce full-tunnel IPv4 + IPv6 routing to prevent split DNS/IP leaks
-                    val enforcedPeer = Peer.Builder()
-                        .setPublicKey(basePeer.publicKey)
-                        .apply {
-                            basePeer.endpoint.ifPresent { setEndpoint(it) }
-                            basePeer.preSharedKey.ifPresent { setPreSharedKey(it) }
-                        }
-                        .parseAllowedIPs("0.0.0.0/0, ::/0")
-                        .setPersistentKeepalive(basePeer.persistentKeepalive.orElse(25))
-                        .build()
-                    cfgBuilder.addPeer(enforcedPeer)
-                } else {
-                    cfgBuilder.addPeer(basePeer)
-                }
-            }
-            return cfgBuilder.build()
+            return applyPolicyOverrides(
+                baseConfig = baseConfig,
+                fallbackPrivateKey = baseConfig.`interface`.keyPair.privateKey.toBase64(),
+                effectiveDns = effectiveDns,
+                dnsLeakProtectionEnabled = dnsLeakProtectionEnabled,
+                mtu = mtu,
+                excludedPackages = excludedPackages
+            )
         }
 
         val dualStackAddresses = listOf(assignedIpv4, assignedIpv6)
@@ -143,5 +134,65 @@ object WireGuardConfigHelper {
             .setInterface(iface)
             .addPeer(peer)
             .build()
+    }
+
+    private fun injectPrivateKeyIntoWgQuick(wgQuick: String, privateKeyBase64: String): String {
+        val lines = wgQuick.lines()
+        val hasPrivateKey = lines.any { it.trim().startsWith("PrivateKey", ignoreCase = true) && it.contains("=") }
+        if (hasPrivateKey) return wgQuick
+        val out = StringBuilder()
+        var inserted = false
+        for (line in lines) {
+            out.appendLine(line)
+            if (!inserted && line.trim().equals("[Interface]", ignoreCase = true)) {
+                out.appendLine("PrivateKey = $privateKeyBase64")
+                inserted = true
+            }
+        }
+        return out.toString()
+    }
+
+    private fun applyPolicyOverrides(
+        baseConfig: Config,
+        fallbackPrivateKey: String,
+        effectiveDns: String,
+        dnsLeakProtectionEnabled: Boolean,
+        mtu: Int,
+        excludedPackages: Set<String>
+    ): Config {
+        val ifaceBuilder = Interface.Builder().apply {
+            parsePrivateKey(fallbackPrivateKey)
+            val addr = baseConfig.`interface`.addresses.joinToString(", ") { it.toString() }
+            if (addr.isNotBlank()) parseAddresses(addr)
+            val dns = if (dnsLeakProtectionEnabled) {
+                effectiveDns.ifBlank { STRICT_DUAL_STACK_DNS }
+            } else {
+                baseConfig.`interface`.dnsServers.joinToString(", ") { it.hostAddress ?: "" }
+                    .ifBlank { effectiveDns }
+            }
+            if (dns.isNotBlank()) parseDnsServers(dns)
+            setMtu(mtu)
+            if (excludedPackages.isNotEmpty()) {
+                excludeApplications(excludedPackages)
+            }
+        }
+        val cfgBuilder = Config.Builder().setInterface(ifaceBuilder.build())
+        baseConfig.peers.forEach { basePeer ->
+            if (dnsLeakProtectionEnabled) {
+                val enforcedPeer = Peer.Builder()
+                    .setPublicKey(basePeer.publicKey)
+                    .apply {
+                        basePeer.endpoint.ifPresent { setEndpoint(it) }
+                        basePeer.preSharedKey.ifPresent { setPreSharedKey(it) }
+                    }
+                    .parseAllowedIPs("0.0.0.0/0, ::/0")
+                    .setPersistentKeepalive(basePeer.persistentKeepalive.orElse(25))
+                    .build()
+                cfgBuilder.addPeer(enforcedPeer)
+            } else {
+                cfgBuilder.addPeer(basePeer)
+            }
+        }
+        return cfgBuilder.build()
     }
 }

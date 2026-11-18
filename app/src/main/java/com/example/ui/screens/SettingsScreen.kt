@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
@@ -43,6 +44,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -63,6 +65,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.NexoraConfig
 import com.example.R
 import com.example.data.local.UserPreferences
 import com.example.ui.components.NexoraGlowCard
@@ -75,6 +78,7 @@ import com.example.ui.theme.ObsidianSurface
 import com.example.ui.theme.StatusAmber
 import com.example.ui.theme.StatusCrimson
 import com.example.ui.theme.StatusEmerald
+import com.example.ui.theme.TelemetryMonoStyle
 import com.example.ui.theme.TextSecondary
 import com.example.ui.viewmodel.ApiHealthState
 
@@ -88,14 +92,13 @@ data class InstalledAppItem(
 fun SettingsScreen(
     preferences: UserPreferences,
     apiHealth: ApiHealthState,
-    onSaveAndTestApi: (String) -> Unit,
+    onRefreshBackendHealth: () -> Unit,
     onLanguageSelected: (String) -> Unit,
     onSaveWireGuardSettings: (String, Int, Boolean, Boolean, Boolean, Boolean) -> Unit,
     onToggleExcludedPackage: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    var apiUrlInput by remember(preferences.apiBaseUrl) { mutableStateOf(preferences.apiBaseUrl) }
     var dnsInput by remember(preferences.customDns) { mutableStateOf(preferences.customDns) }
     var mtuInput by remember(preferences.tunnelMtu) { mutableStateOf(preferences.tunnelMtu.toString()) }
     var autoConnect by remember(preferences.autoConnect) { mutableStateOf(preferences.autoConnect) }
@@ -122,45 +125,36 @@ fun SettingsScreen(
                 color = MaterialTheme.colorScheme.onBackground
             )
 
-            // Backend API Configuration
+            // Read-Only Embedded Backend Connection Status
             NexoraGlowCard(modifier = Modifier.fillMaxWidth()) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Cloud, contentDescription = null, tint = NeonCyan)
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.section_backend), style = MaterialTheme.typography.titleMedium)
-                }
-                Spacer(Modifier.height(10.dp))
-                OutlinedTextField(
-                    value = apiUrlInput,
-                    onValueChange = { apiUrlInput = it },
-                    label = { Text(stringResource(R.string.field_api_url)) },
-                    placeholder = { Text(stringResource(R.string.hint_api_url)) },
-                    singleLine = true,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("api_url_input")
-                )
-                Spacer(Modifier.height(10.dp))
-                Button(
-                    onClick = { onSaveAndTestApi(apiUrlInput) },
-                    colors = ButtonDefaults.buttonColors(containerColor = ElectricBlue),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("save_api_url_button")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (apiHealth is ApiHealthState.Checking) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.Cloud, contentDescription = null, tint = NeonCyan)
                         Spacer(Modifier.width(8.dp))
+                        Text(stringResource(R.string.section_backend), style = MaterialTheme.typography.titleMedium)
                     }
-                    Text(stringResource(R.string.action_save_test_api), fontWeight = FontWeight.Bold)
+                    IconButton(
+                        onClick = onRefreshBackendHealth,
+                        modifier = Modifier.testTag("refresh_backend_health_button")
+                    ) {
+                        if (apiHealth is ApiHealthState.Checking) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = NeonCyan)
+                        } else {
+                            Icon(
+                                imageVector = Icons.Filled.Refresh,
+                                contentDescription = stringResource(R.string.action_sync_servers),
+                                tint = NeonCyan
+                            )
+                        }
+                    }
                 }
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(6.dp))
                 when (apiHealth) {
-                    ApiHealthState.NotConfigured -> Text(
-                        text = stringResource(R.string.api_status_not_set),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = TextSecondary
-                    )
+                    ApiHealthState.NotConfigured,
                     ApiHealthState.Checking -> Text(
                         text = stringResource(R.string.label_ip_checking),
                         style = MaterialTheme.typography.bodyMedium,
@@ -179,6 +173,14 @@ fun SettingsScreen(
                         text = stringResource(R.string.api_status_error, apiHealth.reason),
                         style = MaterialTheme.typography.bodyMedium,
                         color = StatusCrimson
+                    )
+                }
+                if (NexoraConfig.IS_LOCAL_DEMO_MODE) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = stringResource(R.string.label_local_demo_endpoint, NexoraConfig.NEXORA_API_BASE_URL),
+                        style = TelemetryMonoStyle,
+                        color = StatusAmber
                     )
                 }
             }

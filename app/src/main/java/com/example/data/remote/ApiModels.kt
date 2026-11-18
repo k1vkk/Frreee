@@ -104,6 +104,11 @@ data class ServersResponse(
 )
 
 @JsonClass(generateAdapter = true)
+data class BestServerResponse(
+    val server: ServerDto
+)
+
+@JsonClass(generateAdapter = true)
 data class ProvisionRequest(
     val serverId: String,
     val clientPublicKey: String

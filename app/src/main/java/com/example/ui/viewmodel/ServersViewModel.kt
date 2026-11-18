@@ -4,6 +4,8 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.NexoraApp
+import com.example.NexoraConfig
+import com.example.data.local.LocalDemoFixtures
 import com.example.data.local.ServerProfileEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -97,12 +99,7 @@ class ServersViewModel(application: Application) : AndroidViewModel(application)
     )
 
     init {
-        viewModelScope.launch {
-            val prefs = prefsRepo.preferencesFlow.first()
-            if (prefs.apiBaseUrl.isNotBlank()) {
-                syncServersFromBackend()
-            }
-        }
+        syncServersFromBackend()
     }
 
     fun setSearchQuery(query: String) {
@@ -122,47 +119,62 @@ class ServersViewModel(application: Application) : AndroidViewModel(application)
             isSyncing.value = true
             statusMessage.value = null
             try {
-                val prefs = prefsRepo.preferencesFlow.first()
-                val service = apiClient.createService(prefs.apiBaseUrl)
-                if (service == null) {
-                    statusMessage.value = "Set a valid Backend API URL in Settings first."
-                    return@launch
-                }
-                val response = withContext(Dispatchers.IO) { service.getServers() }
-                if (!response.isSuccessful || response.body() == null) {
-                    statusMessage.value = "Backend returned HTTP ${response.code()}"
-                    return@launch
-                }
                 val existingFavs = serverDao.observeServers().first()
                     .associate { it.id to it.isFavorite }
-                val entities = response.body()!!.servers.map { dto ->
-                    ServerProfileEntity(
-                        id = dto.id,
-                        nodeCode = dto.nodeCode,
-                        name = dto.name,
-                        countryName = dto.countryName,
-                        countryCode = dto.countryCode,
-                        city = dto.city,
-                        endpoint = dto.endpoint,
-                        serverPublicKey = dto.serverPublicKey,
-                        dnsServers = dto.dnsServers,
-                        tier = dto.tier,
-                        loadPercent = dto.loadPercent,
-                        sourceType = "BACKEND",
-                        healthStatus = dto.healthStatus,
-                        lastPingMs = dto.latencyMs,
-                        lastHealthCheckAt = dto.lastHealthCheckAt,
-                        isFavorite = existingFavs[dto.id] ?: false
-                    )
+                val service = apiClient.createService(NexoraConfig.NEXORA_API_BASE_URL)
+                if (service != null) {
+                    try {
+                        val response = withContext(Dispatchers.IO) { service.getServers() }
+                        if (response.isSuccessful && response.body() != null) {
+                            val entities = response.body()!!.servers.map { dto ->
+                                ServerProfileEntity(
+                                    id = dto.id,
+                                    nodeCode = dto.nodeCode,
+                                    name = dto.name,
+                                    countryName = dto.countryName,
+                                    countryCode = dto.countryCode,
+                                    city = dto.city,
+                                    endpoint = dto.endpoint,
+                                    serverPublicKey = dto.serverPublicKey,
+                                    dnsServers = dto.dnsServers,
+                                    tier = dto.tier,
+                                    loadPercent = dto.loadPercent,
+                                    sourceType = "BACKEND",
+                                    healthStatus = dto.healthStatus,
+                                    lastPingMs = dto.latencyMs,
+                                    lastHealthCheckAt = dto.lastHealthCheckAt,
+                                    isFavorite = existingFavs[dto.id] ?: false
+                                )
+                            }
+                            if (entities.isEmpty()) {
+                                serverDao.deleteAllBackendServers()
+                                statusMessage.value = "0 online GCC VPS nodes active in backend. Provision SA01–OM01 VPS nodes first."
+                            } else {
+                                serverDao.upsertAll(entities)
+                                serverDao.deleteStaleBackendServers(entities.map { it.id })
+                                measureAllPings()
+                            }
+                            return@launch
+                        } else if (!NexoraConfig.IS_LOCAL_DEMO_MODE) {
+                            statusMessage.value = "Backend returned HTTP ${response.code()}"
+                            return@launch
+                        }
+                    } catch (e: Exception) {
+                        if (!NexoraConfig.IS_LOCAL_DEMO_MODE) {
+                            statusMessage.value = e.localizedMessage ?: "Failed to sync servers"
+                            return@launch
+                        }
+                    }
+                } else if (!NexoraConfig.IS_LOCAL_DEMO_MODE) {
+                    statusMessage.value =
+                        "Embedded backend URL (${NexoraConfig.NEXORA_API_BASE_URL}) is not a reachable HTTPS host."
+                    return@launch
                 }
-                if (entities.isEmpty()) {
-                    serverDao.deleteAllBackendServers()
-                    statusMessage.value = "0 online GCC VPS nodes active in backend. Provision SA01–OM01 VPS nodes first."
-                } else {
-                    serverDao.upsertAll(entities)
-                    serverDao.deleteStaleBackendServers(entities.map { it.id })
-                    measureAllPings()
-                }
+
+                // Local/Demo mode fallback: populate the 8 GCC nodes cleanly
+                val demoEntities = LocalDemoFixtures.gccDemoServers(existingFavs)
+                serverDao.upsertAll(demoEntities)
+                serverDao.deleteStaleBackendServers(demoEntities.map { it.id })
             } catch (e: Exception) {
                 statusMessage.value = e.localizedMessage ?: "Failed to sync servers"
             } finally {
@@ -180,7 +192,12 @@ class ServersViewModel(application: Application) : AndroidViewModel(application)
                     list.map { server ->
                         async {
                             val ping = diagnostics.measureTcpPing(server.endpoint, 2200)
-                            serverDao.updatePing(server.id, ping)
+                            val effectivePing = ping ?: if (NexoraConfig.IS_LOCAL_DEMO_MODE && server.sourceType == "BACKEND") {
+                                server.lastPingMs
+                            } else {
+                                null
+                            }
+                            serverDao.updatePing(server.id, effectivePing)
                         }
                     }.awaitAll()
                 }

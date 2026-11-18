@@ -112,7 +112,11 @@ private fun NexoraRootApp(widthSizeClass: WindowWidthSizeClass) {
 
     val serversUiState by serversViewModel.uiState.collectAsStateWithLifecycle()
     val speedProgress by speedTestViewModel.progress.collectAsStateWithLifecycle()
-    val speedHistory by speedTestViewModel.history.collectAsStateWithLifecycle()
+    val speedHistory by speedTestViewModel.filteredHistory.collectAsStateWithLifecycle()
+    val speedHistoryFilter by speedTestViewModel.historyFilter.collectAsStateWithLifecycle()
+    val speedComparison by speedTestViewModel.comparisonState.collectAsStateWithLifecycle()
+    val speedEcoMode by speedTestViewModel.ecoMode.collectAsStateWithLifecycle()
+    val speedIncludeUpload by speedTestViewModel.includeUpload.collectAsStateWithLifecycle()
     val sessions by accountViewModel.sessions.collectAsStateWithLifecycle()
     val authLoading by accountViewModel.authLoading.collectAsStateWithLifecycle()
     val authError by accountViewModel.authError.collectAsStateWithLifecycle()
@@ -386,8 +390,23 @@ private fun NexoraRootApp(widthSizeClass: WindowWidthSizeClass) {
                                 SpeedTestScreen(
                                     progress = speedProgress,
                                     history = speedHistory,
+                                    historyFilter = speedHistoryFilter,
+                                    comparisonState = speedComparison,
+                                    vpnState = vpnState,
+                                    ecoMode = speedEcoMode,
+                                    includeUpload = speedIncludeUpload,
+                                    onAttachWebView = speedTestViewModel::attachWebView,
+                                    onDetachWebView = speedTestViewModel::detachWebView,
                                     onStart = speedTestViewModel::startSpeedTest,
-                                    onStop = speedTestViewModel::stopSpeedTest
+                                    onStop = speedTestViewModel::stopSpeedTest,
+                                    onSetEcoMode = speedTestViewModel::setEcoMode,
+                                    onSetIncludeUpload = speedTestViewModel::setIncludeUpload,
+                                    onSetHistoryFilter = speedTestViewModel::setHistoryFilter,
+                                    onSelectAsBaseline = speedTestViewModel::selectAsBaseline,
+                                    onSelectAsTarget = speedTestViewModel::selectAsTarget,
+                                    onResetComparison = speedTestViewModel::resetComparisonToDefault,
+                                    onDeleteEntry = speedTestViewModel::deleteHistoryEntry,
+                                    onClearHistory = speedTestViewModel::clearHistory
                                 )
                             }
 
