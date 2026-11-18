@@ -25,33 +25,53 @@ psql "$DATABASE_URL" -f backend/db/seed.sql
 
 ## 3. Deploy the Control Plane Backend (HTTPS)
 
-### Option A: Railway / Render / Fly.io
-Deployment manifests are included in `backend/railway.json`, `backend/render.yaml`, `backend/fly.toml`, and `backend/Dockerfile`.
+### Option A: Fly.io (`dxb` Recommended) + External Supabase PostgreSQL
+Deployment manifests are included in `backend/fly.toml`, `backend/railway.json`, `backend/render.yaml`, and `backend/Dockerfile`.
 
-Set these environment variables on your host:
+Set these environment variables / secrets on your host:
 - `NODE_ENV` — `production` (required in production)
 - `PORT` — `4000`
 - `ENFORCE_HTTPS` — `true` (required in production)
-- `CORS_ORIGIN` — explicit HTTPS origin(s), e.g. `https://api.your-nexora-domain.com` (never `*` in production)
-- `DATABASE_URL` — PostgreSQL connection string (`postgresql://...`)
+- `CORS_ORIGIN` — explicit HTTPS origin(s), e.g. `https://nexora-vpn-api.fly.dev` (never `*` in production)
+- `DATABASE_URL` — Supabase **Session Pooler** IPv4 connection string (`postgresql://...pooler.supabase.com:5432/postgres`)
 - `DATABASE_SSL` — `true` (required for external/Supabase PostgreSQL; use `false` only for private Docker internal network)
 - `DATABASE_SSL_REJECT_UNAUTHORIZED` — `true` (certificate verification required in production)
 - `DATABASE_CA_CERT` — inline PEM certificate or file path for managed/Supabase PostgreSQL TLS verification
 - `JWT_SECRET` — strong random 64-char hex string (`openssl rand -hex 32`)
 - `ADMIN_SECRET` / `ADMIN_API_KEY` — strong admin dashboard secret (`openssl rand -hex 32`)
-- `NODE_AGENT_SECRET` — shared secret used by WireGuard VPS agents to push telemetry & receive peer commands (`openssl rand -hex 32`)
-- `API_PUBLIC_URL` — e.g. `https://api.your-nexora-domain.com`
+- `NODE_AGENT_SECRET` — shared secret used by WireGuard VPS agents (`openssl rand -hex 32`)
+- `API_PUBLIC_URL` — e.g. `https://nexora-vpn-api.fly.dev`
 - `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` — raw JSON or path of your Play Console service account (for subscription verification)
 - `SPEEDOFME_API_KEY` & `SPEEDOFME_DOMAIN` — optional backend-delivered SpeedOf.Me credentials
 - `RESEND_API_KEY` & `MAIL_FROM` — optional transactional email for password reset OTPs
 
-Run database migrations separately before starting the production server:
+#### Deploying on Fly.io (`primary_region = "dxb"`)
+```bash
+cd backend
+fly apps create nexora-vpn-api   # or use your own app name in fly.toml
+fly secrets set \
+  DATABASE_URL="postgresql://..." \
+  DATABASE_CA_CERT="$(cat supabase-ca.crt)" \
+  JWT_SECRET="$(openssl rand -hex 32)" \
+  ADMIN_SECRET="$(openssl rand -hex 32)" \
+  NODE_AGENT_SECRET="$(openssl rand -hex 32)" \
+  CORS_ORIGIN="https://nexora-vpn-api.fly.dev" \
+  API_PUBLIC_URL="https://nexora-vpn-api.fly.dev"
+fly deploy
+```
+`backend/fly.toml` executes `release_command = "npm run migrate"` automatically before routing traffic.
+
+#### Deploying on Railway or Render
+- **Railway**: Set Service **Root Directory** to `backend` (`backend/railway.json` runs `preDeployCommand: ["npm run migrate"]` and builds `backend/Dockerfile`). Configure the same required environment variables above in Railway Variables.
+- **Render**: Set Service **Root Directory** to `backend` (`backend/render.yaml` uses external Supabase `DATABASE_URL` via `sync: false`, `preDeployCommand: npm run migrate`, and prompts for `CORS_ORIGIN`, `API_PUBLIC_URL`, and `DATABASE_CA_CERT`).
+
+For manual migration checks before starting:
 ```bash
 cd backend && npm run migrate
 ```
 
 ### Option B: Ubuntu VPS + Docker + Caddy Automatic HTTPS
-1. Copy `backend/.env.example` to `backend/.env` and fill all secrets.
+1. Copy `backend/.env.example` to `backend/.env` and fill all secrets (including explicit HTTPS `CORS_ORIGIN`).
 2. Update your domain in `backend/Caddyfile`.
 3. Run:
    ```bash
@@ -64,7 +84,7 @@ cd backend && npm run migrate
    ```
 5. Verify your real HTTPS URL responds:
    ```bash
-   curl https://api.your-nexora-domain.com/api/health
+   curl https://api.your-nexora-domain.com/api/v1/health
    ```
 
 ---
@@ -72,16 +92,20 @@ cd backend && npm run migrate
 ## 4. Provision Real WireGuard GCC VPS Nodes
 Do **NOT** invent server IPs or keys. On each real Linux VPS you rent:
 
-1. Open firewall ports: **UDP 51820** (WireGuard) and **TCP 8787** (restricted to your backend IP for node agent).
-2. Run the automated WireGuard + Node Agent installer:
+1. Open firewall ports: **UDP 51820** (WireGuard) and **TCP 443 / 80** (for Caddy HTTPS TLS termination in front of localhost node agent on **TCP 51821**), OR communicate over a private WireGuard/Tailscale mesh (`TCP 51821` bound to the private tunnel IP).
+2. Run the automated WireGuard + Node Agent installer using environment variables (recommended TLS mode via `AGENT_DOMAIN`):
    ```bash
-   sudo bash backend/scripts/setup-wg-vps.sh \
-     --node-code SA01 \
-     --api-url https://api.your-nexora-domain.com \
-     --agent-secret "<YOUR_NODE_AGENT_SECRET>"
+   sudo NODE_CODE=SA01 \
+     SUBNET_V4=10.8.1.1/24 \
+     SUBNET_V6=fd80:4e58:5201::1/64 \
+     AGENT_DOMAIN=sa01-agent.your-nexora-domain.com \
+     CONTROL_PLANE_URL=https://api.your-nexora-domain.com \
+     ADMIN_SECRET="<YOUR_ADMIN_SECRET>" \
+     NODE_AGENT_SECRET="<YOUR_NODE_AGENT_SECRET>" \
+     bash backend/scripts/setup-wg-vps.sh
    ```
-3. The script installs `wireguard`, generates Curve25519 keys via `wg genkey`/`wg pubkey`, enables IPv4/IPv6 NAT forwarding (`sysctl` + `iptables`/`ip6tables`), starts `wg0`, and runs `backend/node-agent/agent.js` as a systemd service.
-4. The node automatically registers its real public IP, WireGuard public key, and telemetry into PostgreSQL, switching its status from `pending_vps` to `online`.
+3. The script installs `wireguard`, generates Curve25519 keys via `wg genkey`/`wg pubkey`, enables IPv4/IPv6 NAT forwarding (`sysctl` + `iptables`/`ip6tables`), starts `wg0`, binds `backend/node-agent/agent.js` on `127.0.0.1:51821` behind Caddy HTTPS (`https://<AGENT_DOMAIN>`), and keeps `NODE_AGENT_SECRET` encrypted in transit.
+4. The node registers its real public IP, WireGuard public key, and HTTPS `agentUrl` into PostgreSQL, switching its status from `pending_vps` to `online` once verified by the control plane. *(Live multi-VPS TLS connectivity must be verified after provisioning your first real Ubuntu VPS.)*
 
 ---
 

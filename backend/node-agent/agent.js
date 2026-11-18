@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import http from 'node:http';
 import os from 'node:os';
 import { execFile } from 'node:child_process';
@@ -5,8 +6,10 @@ import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 const PORT = Number(process.env.NODE_AGENT_PORT || 51821);
+const HOST = (process.env.NODE_AGENT_HOST || '127.0.0.1').trim();
 const SECRET = (process.env.NODE_AGENT_SECRET || '').trim();
 const WG_IFACE = process.env.WG_INTERFACE || 'wg0';
+const MAX_BODY_BYTES = 64 * 1024;
 
 if (!SECRET || SECRET.startsWith('REPLACE_WITH_')) {
   console.error('FATAL: NODE_AGENT_SECRET must be configured before starting nexora-node-agent.');
@@ -22,9 +25,24 @@ function sendJson(res, status, data) {
   res.end(JSON.stringify(data));
 }
 
+function isAuthorizedSecret(headerValue) {
+  const provided = typeof headerValue === 'string' ? headerValue.trim() : '';
+  if (!provided || !SECRET) return false;
+  const a = Buffer.from(provided, 'utf8');
+  const b = Buffer.from(SECRET, 'utf8');
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
 async function readBody(req) {
   const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
+  let total = 0;
+  for await (const chunk of req) {
+    total += chunk.length;
+    if (total > MAX_BODY_BYTES) {
+      throw new Error('Request payload too large');
+    }
+    chunks.push(chunk);
+  }
   return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
 }
 
@@ -73,7 +91,7 @@ export function parseWgDump(stdout) {
 }
 
 const server = http.createServer(async (req, res) => {
-  if (req.headers['x-agent-secret'] !== SECRET) {
+  if (!isAuthorizedSecret(req.headers['x-agent-secret'])) {
     return sendJson(res, 403, { error: 'Forbidden' });
   }
 
@@ -136,6 +154,6 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`NEXORA WireGuard Node Agent listening on :${PORT} for ${WG_IFACE}`);
+server.listen(PORT, HOST, () => {
+  console.log(`NEXORA WireGuard Node Agent listening on ${HOST}:${PORT} for ${WG_IFACE}`);
 });

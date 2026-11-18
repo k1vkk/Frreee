@@ -4,13 +4,28 @@ primary_region = "dxb"
 [build]
   dockerfile = "Dockerfile"
 
+[deploy]
+  release_command = "npm run migrate"
+
 [env]
   NODE_ENV = "production"
   PORT = "4000"
   TRUST_PROXY = "true"
   ENFORCE_HTTPS = "true"
   DATABASE_SSL = "true"
+  DATABASE_SSL_REJECT_UNAUTHORIZED = "true"
   GOOGLE_PLAY_PACKAGE_NAME = "com.aistudio.nexoravpn.nxrk7q"
+
+# Required secrets (set via `fly secrets set`, never commit real values):
+#   DATABASE_URL="postgresql://..."                   # Supabase Session Pooler IPv4 URI (port 5432)
+#   DATABASE_CA_CERT="-----BEGIN CERTIFICATE-----..." # Managed/Supabase CA PEM if required for TLS verify
+#   JWT_SECRET="..."                                  # >= 32 random chars (`openssl rand -hex 32`)
+#   ADMIN_SECRET="..."                                # >= 32 random chars (`openssl rand -hex 32`)
+#   NODE_AGENT_SECRET="..."                           # >= 16 random chars (`openssl rand -hex 32`)
+#   CORS_ORIGIN="https://<your-domain>"               # Explicit HTTPS origin(s); never "*"
+#   API_PUBLIC_URL="https://<your-domain>"
+# Optional secrets:
+#   GOOGLE_PLAY_SERVICE_ACCOUNT_JSON, RESEND_API_KEY, SMTP_WEBHOOK_URL, MAIL_FROM, SPEEDOFME_API_KEY, SPEEDOFME_DOMAIN
 
 [http_service]
   internal_port = 4000

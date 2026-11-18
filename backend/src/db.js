@@ -231,7 +231,7 @@ export async function checkDatabaseHealth() {
   return { ok: true };
 }
 
-export async function initializeDatabase() {
+export async function initializeDatabase(dbPool = getPool()) {
   const schemaPath = path.resolve(__dirname, '../db/schema.sql');
   const migration1Path = path.resolve(__dirname, '../db/migrations/001_phase1_support_tickets.sql');
   const migration2Path = path.resolve(__dirname, '../db/migrations/002_phase2_supabase_rls.sql');
@@ -245,10 +245,19 @@ export async function initializeDatabase() {
   const seedSql = await fs.readFile(seedPath, 'utf8');
 
   await withDbRetry(async () => {
-    const db = getPool();
-    await db.query(schemaSql);
-    if (migration1Sql) await db.query(migration1Sql);
-    if (migration2Sql) await db.query(migration2Sql);
-    await db.query(seedSql);
+    const client = await dbPool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(schemaSql);
+      if (migration1Sql) await client.query(migration1Sql);
+      if (migration2Sql) await client.query(migration2Sql);
+      await client.query(seedSql);
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
   }, { maxAttempts: 3, baseDelayMs: 500 });
 }

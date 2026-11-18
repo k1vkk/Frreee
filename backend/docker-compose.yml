@@ -28,7 +28,7 @@ services:
       TRUST_PROXY: "true"
       ENFORCE_HTTPS: ${ENFORCE_HTTPS:-true}
       API_PUBLIC_URL: ${API_PUBLIC_URL:?Set API_PUBLIC_URL in .env}
-      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+      CORS_ORIGIN: ${CORS_ORIGIN:?Set explicit HTTPS CORS_ORIGIN in .env (never "*")}
       DATABASE_URL: postgres://nexora:${POSTGRES_PASSWORD}@postgres:5432/nexora_vpn
       DATABASE_SSL: "false"
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}

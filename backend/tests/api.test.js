@@ -17,6 +17,7 @@ import { ALLOWED_SUPPORT_CATEGORIES, normalizeSupportCategory } from '../src/rou
 import { resolveAdminSubscriptionUpdate } from '../src/routes/admin.js';
 import {
   createPoolConfig,
+  initializeDatabase,
   isTransientDbError,
   resolveSslConfig,
   sanitizeConnectionString,
@@ -517,5 +518,78 @@ test('bootstrap separates migrations from startup and backend/.env.example docum
     assert.ok(envExample.includes(key), `Missing ${key} in backend/.env.example`);
   }
 });
+
+test('initializeDatabase executes schema, migrations, and idempotent seed in a single transaction', async () => {
+  const executed = [];
+  let released = 0;
+  const mockPool = {
+    async connect() {
+      return {
+        async query(sql) {
+          executed.push(String(sql));
+        },
+        release() {
+          released++;
+        }
+      };
+    }
+  };
+
+  await initializeDatabase(mockPool);
+  assert.equal(executed[0], 'BEGIN');
+  assert.equal(executed[executed.length - 1], 'COMMIT');
+  assert.equal(released, 1);
+  assert.match(executed[1], /CREATE TABLE IF NOT EXISTS vpn_servers/);
+  assert.match(executed[executed.length - 2], /ON CONFLICT \(node_code\) DO NOTHING/i);
+
+  const rollbackOps = [];
+  let failReleases = 0;
+  const failingPool = {
+    async connect() {
+      return {
+        async query(sql) {
+          rollbackOps.push(String(sql));
+          if (String(sql).includes('ALTER TABLE public.users')) {
+            const err = new Error('simulated non-transient DDL failure');
+            err.code = '42601';
+            throw err;
+          }
+        },
+        release() {
+          failReleases++;
+        }
+      };
+    }
+  };
+
+  await assert.rejects(() => initializeDatabase(failingPool), /simulated non-transient DDL failure/);
+  assert.equal(rollbackOps[0], 'BEGIN');
+  assert.equal(rollbackOps[rollbackOps.length - 1], 'ROLLBACK');
+  assert.equal(failReleases, 1);
+});
+
+test('deployment manifests enforce migrations, explicit CORS_ORIGIN, external DB support, and deterministic Docker install', async () => {
+  const rootDir = path.resolve(__dirname, '..');
+  const flyToml = await fs.readFile(path.join(rootDir, 'fly.toml'), 'utf8');
+  assert.match(flyToml, /primary_region\s*=\s*"dxb"/);
+  assert.match(flyToml, /release_command\s*=\s*"npm run migrate"/);
+
+  const railwayJson = JSON.parse(await fs.readFile(path.join(rootDir, 'railway.json'), 'utf8'));
+  assert.deepEqual(railwayJson.deploy?.preDeployCommand, ['npm run migrate']);
+
+  const renderYaml = await fs.readFile(path.join(rootDir, 'render.yaml'), 'utf8');
+  assert.match(renderYaml, /preDeployCommand:\s*npm run migrate/);
+  assert.match(renderYaml, /-\s*key:\s*CORS_ORIGIN/);
+  assert.doesNotMatch(renderYaml, /^databases:/m);
+
+  const dockerfile = await fs.readFile(path.join(rootDir, 'Dockerfile'), 'utf8');
+  assert.match(dockerfile, /RUN npm ci --omit=dev/);
+  assert.doesNotMatch(dockerfile, /RUN npm install/);
+
+  const composeYaml = await fs.readFile(path.join(rootDir, 'docker-compose.yml'), 'utf8');
+  assert.doesNotMatch(composeYaml, /CORS_ORIGIN:\s*\$\{CORS_ORIGIN:-\*\}/);
+  assert.match(composeYaml, /CORS_ORIGIN:\s*\$\{CORS_ORIGIN:\?/);
+});
+
 
 

@@ -25,3 +25,6 @@ debug.keystore
 *.p12
 *.key
 debug.keystore.base64
+.build-outputs/
+public/assets/aistudio/
+/package-lock.json
