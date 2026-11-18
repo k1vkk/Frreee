@@ -19,3 +19,9 @@ backend/.env
 admin-dashboard/.env
 node_modules/
 debug.keystore
+*.jks
+*.keystore
+*.pem
+*.p12
+*.key
+debug.keystore.base64
