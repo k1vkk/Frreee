@@ -5,10 +5,27 @@ import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import dotenv from 'dotenv';
 
-dotenv.config();
-
 const { Pool } = pg;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+let envLoaded = false;
+let activePool = null;
+
+export function loadBackendEnv({ cwd = process.cwd(), force = false } = {}) {
+  if (envLoaded && !force) return;
+  const candidatePaths = Array.from(
+    new Set([
+      path.resolve(__dirname, '../.env'),
+      path.resolve(cwd, '.env'),
+      path.resolve(__dirname, '../../.env')
+    ])
+  );
+  for (const envPath of candidatePaths) {
+    if (fsSync.existsSync(envPath)) {
+      dotenv.config({ path: envPath, override: false });
+    }
+  }
+  envLoaded = true;
+}
 
 const TRANSIENT_PG_CODES = new Set([
   '08000', // connection_exception
@@ -53,13 +70,17 @@ export function resolveSslConfig(env = process.env) {
   const dbUrl = String(env.DATABASE_URL || '').trim();
   const sslEnv = String(env.DATABASE_SSL || '').trim().toLowerCase();
   const caCertRaw = String(env.DATABASE_CA_CERT || '').trim();
+  const isProd = String(env.NODE_ENV || '').trim().toLowerCase() === 'production';
+  const supabaseHost = isSupabaseDatabaseUrl(dbUrl);
 
   if (sslEnv === 'false') {
+    if (isProd && supabaseHost) {
+      throw new Error('Security violation: DATABASE_SSL=false is prohibited for Supabase connections in production.');
+    }
     return undefined;
   }
 
   const urlRequiresSsl = /sslmode=(require|verify-ca|verify-full)/i.test(dbUrl);
-  const supabaseHost = isSupabaseDatabaseUrl(dbUrl);
   const sslEnabled = Boolean(caCertRaw) || sslEnv === 'true' || urlRequiresSsl || supabaseHost;
   if (!sslEnabled) {
     return undefined;
@@ -69,17 +90,19 @@ export function resolveSslConfig(env = process.env) {
   const rejectEnv = env.DATABASE_SSL_REJECT_UNAUTHORIZED;
   const hasExplicitReject = rejectEnv !== undefined && String(rejectEnv).trim() !== '';
 
-  let rejectUnauthorized;
-  if (ca) {
-    rejectUnauthorized = hasExplicitReject
-      ? String(rejectEnv).trim().toLowerCase() === 'true'
-      : true;
-  } else if (hasExplicitReject) {
-    rejectUnauthorized = String(rejectEnv).trim().toLowerCase() === 'true';
-  } else {
-    // Supabase PgBouncer/Session pooler uses an intermediate CA; default to encrypted TLS
-    // without failing verification unless DATABASE_CA_CERT or explicit true is provided.
-    rejectUnauthorized = !supabaseHost;
+  let rejectUnauthorized = true;
+  if (hasExplicitReject) {
+    const normalizedReject = String(rejectEnv).trim().toLowerCase();
+    if (normalizedReject === 'false') {
+      if (isProd) {
+        throw new Error('Security violation: DATABASE_SSL_REJECT_UNAUTHORIZED=false is prohibited in production.');
+      }
+      rejectUnauthorized = false;
+    } else if (normalizedReject === 'true') {
+      rejectUnauthorized = true;
+    } else {
+      throw new Error('Invalid DATABASE_SSL_REJECT_UNAUTHORIZED value; expected "true" or "false".');
+    }
   }
 
   return ca ? { ca, rejectUnauthorized } : { rejectUnauthorized };
@@ -146,39 +169,86 @@ export async function withDbRetry(operation, {
   throw lastError;
 }
 
-const sslConfig = resolveSslConfig(process.env);
-const poolMax = Math.max(1, Math.min(50, Number(process.env.DATABASE_POOL_MAX || 10)));
+export function createPoolConfig(env = process.env) {
+  validateServerDatabaseSecurity(env);
+  const sslConfig = resolveSslConfig(env);
+  const rawMax = Number(env.DATABASE_POOL_MAX || 10);
+  const poolMax = Number.isFinite(rawMax) ? Math.max(1, Math.min(50, rawMax)) : 10;
 
-export const pool = new Pool({
-  connectionString: sanitizeConnectionString(process.env.DATABASE_URL, sslConfig),
-  ssl: sslConfig,
-  max: Number.isFinite(poolMax) ? poolMax : 10,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 10000,
-  keepAlive: true,
-  keepAliveInitialDelayMillis: 10000
-});
+  return {
+    connectionString: sanitizeConnectionString(env.DATABASE_URL, sslConfig),
+    ssl: sslConfig,
+    max: poolMax,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000,
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10000
+  };
+}
 
-pool.on('error', (err) => {
-  console.error('[NEXORA DB] Unexpected idle PostgreSQL client error:', err.message);
-});
+export function initPool(env = process.env) {
+  loadBackendEnv();
+  const config = createPoolConfig(env);
+  const nextPool = new Pool(config);
+  nextPool.on('error', (err) => {
+    console.error('[NEXORA DB] Unexpected idle PostgreSQL client error:', err.message);
+  });
+  activePool = nextPool;
+  return activePool;
+}
+
+export function getPool() {
+  if (!activePool) {
+    return initPool(process.env);
+  }
+  return activePool;
+}
+
+export async function closePool() {
+  if (activePool) {
+    const closing = activePool;
+    activePool = null;
+    await closing.end();
+  }
+}
+
+export const pool = new Proxy(
+  {},
+  {
+    get(_target, prop) {
+      if (prop === 'end') {
+        return () => closePool();
+      }
+      const instance = getPool();
+      const value = instance[prop];
+      return typeof value === 'function' ? value.bind(instance) : value;
+    }
+  }
+);
 
 export async function checkDatabaseHealth() {
-  await withDbRetry(() => pool.query('SELECT 1'), { maxAttempts: 2, baseDelayMs: 150 });
+  await withDbRetry(() => getPool().query('SELECT 1'), { maxAttempts: 2, baseDelayMs: 150 });
   return { ok: true };
 }
 
 export async function initializeDatabase() {
   const schemaPath = path.resolve(__dirname, '../db/schema.sql');
+  const migration1Path = path.resolve(__dirname, '../db/migrations/001_phase1_support_tickets.sql');
+  const migration2Path = path.resolve(__dirname, '../db/migrations/002_phase2_supabase_rls.sql');
   const primarySeedPath = path.resolve(__dirname, '../db/seed.sql');
   const fallbackSeedPath = path.resolve(__dirname, '../db/seed_gcc_topology.sql');
 
   const schemaSql = await fs.readFile(schemaPath, 'utf8');
+  const migration1Sql = fsSync.existsSync(migration1Path) ? await fs.readFile(migration1Path, 'utf8') : '';
+  const migration2Sql = fsSync.existsSync(migration2Path) ? await fs.readFile(migration2Path, 'utf8') : '';
   const seedPath = fsSync.existsSync(primarySeedPath) ? primarySeedPath : fallbackSeedPath;
   const seedSql = await fs.readFile(seedPath, 'utf8');
 
   await withDbRetry(async () => {
-    await pool.query(schemaSql);
-    await pool.query(seedSql);
+    const db = getPool();
+    await db.query(schemaSql);
+    if (migration1Sql) await db.query(migration1Sql);
+    if (migration2Sql) await db.query(migration2Sql);
+    await db.query(seedSql);
   }, { maxAttempts: 3, baseDelayMs: 500 });
 }

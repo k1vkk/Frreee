@@ -1,20 +1,48 @@
 import jwt from 'jsonwebtoken';
 import { pool } from '../db.js';
 
-export function getJwtSecret() {
-  const secret = process.env.JWT_SECRET;
-  if (!secret || secret.startsWith('replace_with_') || secret.startsWith('REPLACE_WITH_')) {
-    if (process.env.NODE_ENV === 'production') {
-      throw new Error('JWT_SECRET must be set to a strong random secret in production');
-    }
-    return 'nexora-ephemeral-local-secret-do-not-use-in-prod';
+const PREDICTABLE_SECRETS = new Set([
+  'secret',
+  'changeme',
+  'password',
+  'admin',
+  'admin123',
+  'default',
+  'jwt_secret',
+  'nexora',
+  'nexora-ephemeral-local-secret-do-not-use-in-prod',
+  '12345678901234567890123456789012'
+]);
+
+export function isWeakOrPredictableSecret(rawSecret, { minLength = 32 } = {}) {
+  const s = String(rawSecret || '').trim();
+  if (!s || s.length < minLength) return true;
+  const lower = s.toLowerCase();
+  if (
+    lower.startsWith('replace_with_') ||
+    lower.startsWith('your_') ||
+    lower.startsWith('example_') ||
+    lower.includes('nexora-ephemeral') ||
+    lower.includes('do-not-use-in-prod') ||
+    PREDICTABLE_SECRETS.has(lower)
+  ) {
+    return true;
+  }
+  if (/^(.)\1+$/.test(s)) return true;
+  return false;
+}
+
+export function getJwtSecret(env = process.env) {
+  const secret = String(env.JWT_SECRET || '').trim();
+  if (isWeakOrPredictableSecret(secret, { minLength: 32 })) {
+    throw new Error('JWT_SECRET must be set to a strong random secret (minimum 32 characters)');
   }
   return secret;
 }
 
-export function getConfiguredAdminSecret() {
-  const secret = (process.env.ADMIN_SECRET || process.env.ADMIN_API_KEY || '').trim();
-  if (!secret || secret.startsWith('replace_with_') || secret.startsWith('REPLACE_WITH_')) {
+export function getConfiguredAdminSecret(env = process.env) {
+  const secret = String(env.ADMIN_SECRET || env.ADMIN_API_KEY || '').trim();
+  if (isWeakOrPredictableSecret(secret, { minLength: 16 })) {
     return '';
   }
   return secret;

@@ -21,6 +21,39 @@ android {
     versionName = "1.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+    fun loadDotEnv(file: java.io.File): Map<String, String> {
+      if (!file.exists()) return emptyMap()
+      val map = linkedMapOf<String, String>()
+      file.readLines().forEach { rawLine ->
+        val line = rawLine.trim()
+        if (line.isEmpty() || line.startsWith("#")) return@forEach
+        val idx = line.indexOf('=')
+        if (idx <= 0) return@forEach
+        val key = line.substring(0, idx).trim()
+        var value = line.substring(idx + 1).trim()
+        if ((value.startsWith("\"") && value.endsWith("\"") && value.length >= 2) ||
+          (value.startsWith("'") && value.endsWith("'") && value.length >= 2)
+        ) {
+          value = value.substring(1, value.length - 1)
+        }
+        map[key] = value
+      }
+      return map
+    }
+
+    val envDefaults = loadDotEnv(rootProject.file(".env.example"))
+    val envOverrides = loadDotEnv(rootProject.file(".env"))
+    fun resolveEnvSecret(key: String): String {
+      val raw = envOverrides[key]?.takeIf { it.isNotBlank() }
+        ?: System.getenv(key)?.takeIf { it.isNotBlank() }
+        ?: envDefaults[key].orEmpty()
+      return raw.replace("\\", "\\\\").replace("\"", "\\\"")
+    }
+
+    buildConfigField("String", "NEXORA_API_BASE_URL", "\"${resolveEnvSecret("NEXORA_API_BASE_URL")}\"")
+    buildConfigField("String", "SPEEDOFME_API_KEY", "\"${resolveEnvSecret("SPEEDOFME_API_KEY")}\"")
+    buildConfigField("String", "SPEEDOFME_DOMAIN", "\"${resolveEnvSecret("SPEEDOFME_DOMAIN")}\"")
   }
 
   // Do not remove or modify these signingConfigs. They are necessary for building, installing,
@@ -97,7 +130,20 @@ secrets {
       "GOOGLE_PLAY_SERVICE_ACCOUNT_JSON",
       "WIREGUARD_SERVER_PUBLIC_KEY",
       "RESEND_API_KEY",
-      "SMTP_WEBHOOK_URL"
+      "SMTP_WEBHOOK_URL",
+      "API_DOMAIN",
+      "API_PUBLIC_URL",
+      "CORS_ORIGIN",
+      "ENFORCE_HTTPS",
+      "GOOGLE_PLAY_PACKAGE_NAME",
+      "JWT_EXPIRES_IN",
+      "MAIL_FROM",
+      "TRUST_PROXY",
+      "VITE_API_BASE_URL",
+      "WG_INTERFACE",
+      "NEXORA_API_BASE_URL",
+      "SPEEDOFME_API_KEY",
+      "SPEEDOFME_DOMAIN"
     )
   )
 }

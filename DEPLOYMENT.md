@@ -29,15 +29,26 @@ psql "$DATABASE_URL" -f backend/db/seed.sql
 Deployment manifests are included in `backend/railway.json`, `backend/render.yaml`, `backend/fly.toml`, and `backend/Dockerfile`.
 
 Set these environment variables on your host:
-- `DATABASE_URL` — PostgreSQL connection string (`postgres://...`)
-- `JWT_SECRET` — strong random 64-byte hex string (`openssl rand -hex 32`)
-- `ADMIN_SECRET` — admin dashboard API key
-- `NODE_AGENT_SECRET` — shared secret used by WireGuard VPS agents to push telemetry & receive peer commands
-- `PORT` — `8080`
-- `PUBLIC_API_URL` — e.g. `https://api.your-nexora-domain.com`
-- `GOOGLE_PLAY_SERVICE_ACCOUNT` — raw JSON or path of your Play Console service account (for subscription verification)
+- `NODE_ENV` — `production` (required in production)
+- `PORT` — `4000`
+- `ENFORCE_HTTPS` — `true` (required in production)
+- `CORS_ORIGIN` — explicit HTTPS origin(s), e.g. `https://api.your-nexora-domain.com` (never `*` in production)
+- `DATABASE_URL` — PostgreSQL connection string (`postgresql://...`)
+- `DATABASE_SSL` — `true` (required for external/Supabase PostgreSQL; use `false` only for private Docker internal network)
+- `DATABASE_SSL_REJECT_UNAUTHORIZED` — `true` (certificate verification required in production)
+- `DATABASE_CA_CERT` — inline PEM certificate or file path for managed/Supabase PostgreSQL TLS verification
+- `JWT_SECRET` — strong random 64-char hex string (`openssl rand -hex 32`)
+- `ADMIN_SECRET` / `ADMIN_API_KEY` — strong admin dashboard secret (`openssl rand -hex 32`)
+- `NODE_AGENT_SECRET` — shared secret used by WireGuard VPS agents to push telemetry & receive peer commands (`openssl rand -hex 32`)
+- `API_PUBLIC_URL` — e.g. `https://api.your-nexora-domain.com`
+- `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` — raw JSON or path of your Play Console service account (for subscription verification)
 - `SPEEDOFME_API_KEY` & `SPEEDOFME_DOMAIN` — optional backend-delivered SpeedOf.Me credentials
-- `RESEND_API_KEY` & `EMAIL_FROM` — optional transactional email for password reset OTPs
+- `RESEND_API_KEY` & `MAIL_FROM` — optional transactional email for password reset OTPs
+
+Run database migrations separately before starting the production server:
+```bash
+cd backend && npm run migrate
+```
 
 ### Option B: Ubuntu VPS + Docker + Caddy Automatic HTTPS
 1. Copy `backend/.env.example` to `backend/.env` and fill all secrets.

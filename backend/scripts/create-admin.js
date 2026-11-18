@@ -1,5 +1,7 @@
 import bcrypt from 'bcryptjs';
-import { initializeDatabase, pool } from '../src/db.js';
+import { checkDatabaseHealth, closePool, initPool, loadBackendEnv, pool } from '../src/db.js';
+
+loadBackendEnv();
 
 const email = (process.env.ADMIN_EMAIL || process.argv[2] || '').trim().toLowerCase();
 const password = process.env.ADMIN_PASSWORD || process.argv[3] || '';
@@ -10,7 +12,13 @@ if (!email || !password || password.length < 10) {
   process.exit(1);
 }
 
-await initializeDatabase();
+if (!String(process.env.DATABASE_URL || '').trim()) {
+  console.error('DATABASE_URL environment variable is required');
+  process.exit(1);
+}
+
+initPool(process.env);
+await checkDatabaseHealth();
 const passwordHash = await bcrypt.hash(password, 12);
 const res = await pool.query(
   `INSERT INTO users (email, password_hash, display_name, role)
@@ -27,4 +35,4 @@ await pool.query(
   [res.rows[0].id]
 );
 console.log('Administrator account ready:', res.rows[0]);
-await pool.end();
+await closePool();

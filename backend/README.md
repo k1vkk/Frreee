@@ -14,10 +14,12 @@
 
 1. **Control Plane Server** (Ubuntu/Debian VPS with Docker + Caddy SSL, or Render / Fly.io `dxb` / Railway) + **PostgreSQL 16**.
 2. **Environment Variables** (`backend/.env` from `backend/.env.example`):
-   - `DATABASE_URL`, `DATABASE_SSL=true`, `API_DOMAIN`, `API_PUBLIC_URL`, `ENFORCE_HTTPS=true`
-   - `JWT_SECRET`, `ADMIN_API_KEY`, `NODE_AGENT_SECRET`
+   - `NODE_ENV=production`, `PORT=4000`, `ENFORCE_HTTPS=true`, `CORS_ORIGIN=https://api.yourdomain.com`
+   - `DATABASE_URL`, `DATABASE_SSL=true`, `DATABASE_SSL_REJECT_UNAUTHORIZED=true`, `DATABASE_CA_CERT`, `API_DOMAIN`, `API_PUBLIC_URL`
+   - `JWT_SECRET`, `ADMIN_SECRET` / `ADMIN_API_KEY`, `NODE_AGENT_SECRET`
    - `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` (for Play Console receipt validation)
-   - `RESEND_API_KEY` or `SMTP_WEBHOOK_URL` (for Password Reset OTP email delivery)
+   - `RESEND_API_KEY` / `SMTP_WEBHOOK_URL` and `MAIL_FROM` (for Password Reset OTP email delivery)
+   - Run `npm run migrate` inside `backend/` before starting the API server (`npm start` does not execute DDL).
 3. **8 Real GCC WireGuard VPS Servers** (`SA01`, `SA02`, `AE01`, `AE02`, `BH01`, `QA01`, `KW01`, `OM01`):
    - Ubuntu 22.04+/Debian 12 with IPv4 + IPv6, UDP `51820`, TCP `51821` (restricted to Control Plane IP).
    - Run `scripts/setup-wg-vps.sh` on each VPS (automatically enables BBR tuning, IPv4+IPv6 NAT, firewall, systemd `nexora-node-agent`, and registers the node with PostgreSQL).

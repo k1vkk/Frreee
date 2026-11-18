@@ -16,13 +16,14 @@ import { PRODUCT_TO_TIER } from '../src/routes/subscriptions.js';
 import { ALLOWED_SUPPORT_CATEGORIES, normalizeSupportCategory } from '../src/routes/support.js';
 import { resolveAdminSubscriptionUpdate } from '../src/routes/admin.js';
 import {
+  createPoolConfig,
   isTransientDbError,
   resolveSslConfig,
   sanitizeConnectionString,
   validateServerDatabaseSecurity,
   withDbRetry
 } from '../src/db.js';
-import { createApp } from '../src/server.js';
+import { createApp, parseAllowedOrigins, validateProductionConfig } from '../src/server.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -42,13 +43,28 @@ test('validates UUIDs, emails, and endpoints accurately', () => {
   assert.equal(parseEndpoint('203.0.113.10:99999'), null);
 });
 
-test('getJwtSecret throws in production when unset or placeholder', () => {
+test('getJwtSecret rejects unset, placeholder, short, and predictable fallback secrets regardless of NODE_ENV', () => {
   const prevEnv = process.env.NODE_ENV;
   const prevSecret = process.env.JWT_SECRET;
   try {
-    process.env.NODE_ENV = 'production';
-    process.env.JWT_SECRET = 'REPLACE_WITH_64_CHAR_HEX_JWT_SECRET';
-    assert.throws(() => getJwtSecret(), /JWT_SECRET must be set/);
+    for (const nodeEnv of ['production', 'development', 'test']) {
+      process.env.NODE_ENV = nodeEnv;
+      delete process.env.JWT_SECRET;
+      assert.throws(() => getJwtSecret(), /JWT_SECRET must be set/);
+
+      process.env.JWT_SECRET = 'REPLACE_WITH_64_CHAR_HEX_JWT_SECRET';
+      assert.throws(() => getJwtSecret(), /JWT_SECRET must be set/);
+
+      process.env.JWT_SECRET = 'nexora-ephemeral-local-secret-do-not-use-in-prod';
+      assert.throws(() => getJwtSecret(), /JWT_SECRET must be set/);
+
+      process.env.JWT_SECRET = 'too-short-secret';
+      assert.throws(() => getJwtSecret(), /JWT_SECRET must be set/);
+    }
+
+    const strong = '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08';
+    process.env.JWT_SECRET = strong;
+    assert.equal(getJwtSecret(), strong);
   } finally {
     process.env.NODE_ENV = prevEnv;
     if (prevSecret === undefined) delete process.env.JWT_SECRET;
@@ -56,13 +72,15 @@ test('getJwtSecret throws in production when unset or placeholder', () => {
   }
 });
 
-test('getConfiguredAdminSecret accepts ADMIN_SECRET and ignores placeholders', () => {
+test('getConfiguredAdminSecret accepts strong secrets and rejects placeholders or predictable values', () => {
   const prev = process.env.ADMIN_SECRET;
   try {
     process.env.ADMIN_SECRET = 'REPLACE_WITH_64_CHAR_HEX_ADMIN_SECRET';
     assert.equal(getConfiguredAdminSecret(), '');
-    process.env.ADMIN_SECRET = 'real-admin-secret-value';
-    assert.equal(getConfiguredAdminSecret(), 'real-admin-secret-value');
+    process.env.ADMIN_SECRET = 'admin123';
+    assert.equal(getConfiguredAdminSecret(), '');
+    process.env.ADMIN_SECRET = 'a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6';
+    assert.equal(getConfiguredAdminSecret(), 'a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6');
   } finally {
     if (prev === undefined) delete process.env.ADMIN_SECRET;
     else process.env.ADMIN_SECRET = prev;
@@ -159,7 +177,7 @@ test('rate limiter blocks excess requests with HTTP 429', () => {
 });
 
 test('Express app mounts protected routes and speedtest config without DB', async () => {
-  const app = createApp();
+  const app = createApp({ NODE_ENV: 'test', ENFORCE_HTTPS: 'false' });
   const server = http.createServer(app);
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   try {
@@ -258,16 +276,47 @@ test('resolveAdminSubscriptionUpdate preserves existing paid tier when updating 
   assert.equal(upgraded.expiresAt.toISOString(), new Date(now.getTime() + 30 * 86400 * 1000).toISOString());
 });
 
-test('resolveSslConfig handles Supabase pooler SSL and inline DATABASE_CA_CERT safely', () => {
-  const disabled = resolveSslConfig({ DATABASE_SSL: 'false', DATABASE_URL: 'postgres://u:p@db.supabase.co:5432/postgres' });
-  assert.equal(disabled, undefined);
+test('resolveSslConfig enforces TLS verification for Supabase and production connections', () => {
+  const devDisabled = resolveSslConfig({
+    NODE_ENV: 'test',
+    DATABASE_SSL: 'false',
+    DATABASE_URL: 'postgres://u:p@db.supabase.co:5432/postgres'
+  });
+  assert.equal(devDisabled, undefined);
+
+  const dockerInternal = resolveSslConfig({
+    NODE_ENV: 'production',
+    DATABASE_SSL: 'false',
+    DATABASE_URL: 'postgres://nexora:pw@postgres:5432/nexora_vpn'
+  });
+  assert.equal(dockerInternal, undefined);
+
+  assert.throws(
+    () => resolveSslConfig({
+      NODE_ENV: 'production',
+      DATABASE_SSL: 'false',
+      DATABASE_URL: 'postgres://u:p@db.supabase.co:5432/postgres'
+    }),
+    /DATABASE_SSL=false is prohibited for Supabase/
+  );
 
   const supabaseDefault = resolveSslConfig({
+    NODE_ENV: 'production',
     DATABASE_URL: 'postgres://postgres.abc:pw@aws-0-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=require'
   });
-  assert.deepEqual(supabaseDefault, { rejectUnauthorized: false });
+  assert.deepEqual(supabaseDefault, { rejectUnauthorized: true });
+
+  assert.throws(
+    () => resolveSslConfig({
+      NODE_ENV: 'production',
+      DATABASE_SSL_REJECT_UNAUTHORIZED: 'false',
+      DATABASE_URL: 'postgres://postgres.abc:pw@aws-0-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=require'
+    }),
+    /DATABASE_SSL_REJECT_UNAUTHORIZED=false is prohibited in production/
+  );
 
   const withCa = resolveSslConfig({
+    NODE_ENV: 'production',
     DATABASE_URL: 'postgres://postgres.abc:pw@aws-0-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=require',
     DATABASE_CA_CERT: '-----BEGIN CERTIFICATE-----\\nMIIB...\\n-----END CERTIFICATE-----'
   });
@@ -345,6 +394,128 @@ test('Phase 2 RLS migration and schema enable RLS on all sensitive tables withou
   assert.match(rlsSql, /FOR ALL TO service_role USING \(true\) WITH CHECK \(true\)/);
   assert.doesNotMatch(rlsSql, /TO\s+(public|anon|authenticated)\s+USING/i);
   assert.doesNotMatch(rlsSql, /DISABLE ROW LEVEL SECURITY/i);
+});
+
+test('createPoolConfig validates frontend security before returning Pool config', () => {
+  assert.throws(
+    () => createPoolConfig({
+      DATABASE_URL: 'postgresql://nexora:pw@db.internal:5432/nexora_vpn',
+      VITE_DATABASE_URL: 'postgresql://leaked'
+    }),
+    /Security violation/
+  );
+
+  const cfg = createPoolConfig({
+    NODE_ENV: 'production',
+    DATABASE_URL: 'postgresql://postgres.abc:pw@aws-0-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=require',
+    DATABASE_POOL_MAX: '25'
+  });
+  assert.equal(cfg.max, 25);
+  assert.deepEqual(cfg.ssl, { rejectUnauthorized: true });
+  assert.equal(cfg.connectionString.includes('sslmode='), false);
+});
+
+test('validateProductionConfig enforces NODE_ENV, strong secrets, explicit CORS_ORIGIN, and ENFORCE_HTTPS', () => {
+  const validProdEnv = {
+    NODE_ENV: 'production',
+    DATABASE_URL: 'postgresql://nexora:pw@db.internal:5432/nexora_vpn',
+    DATABASE_SSL: 'true',
+    JWT_SECRET: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+    ADMIN_SECRET: 'fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210',
+    NODE_AGENT_SECRET: 'abcdef0123456789abcdef0123456789',
+    CORS_ORIGIN: 'https://admin.nexoravpn.net',
+    ENFORCE_HTTPS: 'true'
+  };
+
+  assert.doesNotThrow(() => validateProductionConfig(validProdEnv));
+
+  assert.throws(
+    () => validateProductionConfig({ ...validProdEnv, NODE_ENV: 'development' }),
+    /NODE_ENV must be set to "production"/
+  );
+  assert.throws(
+    () => validateProductionConfig({ ...validProdEnv, CORS_ORIGIN: '*' }),
+    /CORS_ORIGIN must be explicitly configured/
+  );
+  assert.throws(
+    () => validateProductionConfig({ ...validProdEnv, CORS_ORIGIN: '' }),
+    /CORS_ORIGIN must be explicitly configured/
+  );
+  assert.throws(
+    () => validateProductionConfig({ ...validProdEnv, ENFORCE_HTTPS: 'false' }),
+    /ENFORCE_HTTPS=true is required/
+  );
+  assert.throws(
+    () => validateProductionConfig({ ...validProdEnv, ADMIN_SECRET: 'REPLACE_WITH_SECRET', ADMIN_API_KEY: '' }),
+    /ADMIN_SECRET or ADMIN_API_KEY/
+  );
+  assert.throws(
+    () => validateProductionConfig({ ...validProdEnv, NODE_AGENT_SECRET: 'short' }),
+    /NODE_AGENT_SECRET/
+  );
+  assert.deepEqual(parseAllowedOrigins('https://a.example.net, https://b.example.net'), [
+    'https://a.example.net',
+    'https://b.example.net'
+  ]);
+});
+
+test('createApp blocks wildcard CORS and enforces HTTPS in production while keeping health open', async () => {
+  const app = createApp({
+    NODE_ENV: 'production',
+    ENFORCE_HTTPS: 'true',
+    CORS_ORIGIN: 'https://admin.nexoravpn.net'
+  });
+  const server = http.createServer(app);
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const port = server.address().port;
+
+    const httpDenied = await fetch(`http://127.0.0.1:${port}/api/speedtest/config`);
+    assert.equal(httpDenied.status, 403);
+
+    const httpsAllowed = await fetch(`http://127.0.0.1:${port}/api/speedtest/config`, {
+      headers: {
+        'x-forwarded-proto': 'https',
+        Origin: 'https://evil.attacker.test'
+      }
+    });
+    assert.equal(httpsAllowed.status, 200);
+    assert.equal(httpsAllowed.headers.get('access-control-allow-origin'), null);
+
+    const validOriginRes = await fetch(`http://127.0.0.1:${port}/api/speedtest/config`, {
+      headers: {
+        'x-forwarded-proto': 'https',
+        Origin: 'https://admin.nexoravpn.net'
+      }
+    });
+    assert.equal(validOriginRes.status, 200);
+    assert.equal(validOriginRes.headers.get('access-control-allow-origin'), 'https://admin.nexoravpn.net');
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('bootstrap separates migrations from startup and backend/.env.example documents required variables', async () => {
+  const serverSrc = await fs.readFile(path.resolve(__dirname, '../src/server.js'), 'utf8');
+  assert.doesNotMatch(serverSrc, /initializeDatabase\s*\(/);
+
+  const envExample = await fs.readFile(path.resolve(__dirname, '../.env.example'), 'utf8');
+  for (const key of [
+    'NODE_ENV=',
+    'PORT=',
+    'ENFORCE_HTTPS=',
+    'CORS_ORIGIN=',
+    'API_PUBLIC_URL=',
+    'DATABASE_URL=',
+    'DATABASE_SSL=',
+    'DATABASE_SSL_REJECT_UNAUTHORIZED=',
+    'JWT_SECRET=',
+    'ADMIN_SECRET=',
+    'NODE_AGENT_SECRET=',
+    'MAIL_FROM='
+  ]) {
+    assert.ok(envExample.includes(key), `Missing ${key} in backend/.env.example`);
+  }
 });
 
 
