@@ -1,11 +1,16 @@
+# fly.toml app configuration file generated for nexora-vpn-api on 2026-11-19T00:04:50Z
+#
+# See https://docs.fly.io/reference/configuration for information about how to use this file.
+#
+
 app = "nexora-vpn-api"
-primary_region = "dxb"
+primary_region = 'sin'
 
 [build]
   dockerfile = "Dockerfile"
 
 [deploy]
-  release_command = "npm run migrate"
+  release_command = 'npm run migrate'
 
 [env]
   NODE_ENV = "production"
@@ -30,13 +35,13 @@ primary_region = "dxb"
 [http_service]
   internal_port = 4000
   force_https = true
-  auto_stop_machines = "off"
+  auto_stop_machines = false
   auto_start_machines = true
   min_machines_running = 1
+  checks = [{ grace_period = '10s', interval = '15s', method = 'GET', path = '/api/v1/health', timeout = '5s' }]
 
-  [[http_service.checks]]
-    interval = "15s"
-    timeout = "5s"
-    grace_period = "10s"
-    method = "GET"
-    path = "/api/v1/health"
+[[vm]]
+  cpu_kind = 'shared'
+  cpus = 1
+  memory = '1gb'
+  memory_mb = 1024
