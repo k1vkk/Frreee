@@ -571,7 +571,7 @@ test('initializeDatabase executes schema, migrations, and idempotent seed in a s
 test('deployment manifests enforce migrations, explicit CORS_ORIGIN, external DB support, and deterministic Docker install', async () => {
   const rootDir = path.resolve(__dirname, '..');
   const flyToml = await fs.readFile(path.join(rootDir, 'fly.toml'), 'utf8');
-  assert.match(flyToml, /primary_region\s*=\s*"dxb"/);
+  assert.match(flyToml, /primary_region\s*=\s*"sin"/);
   assert.match(flyToml, /release_command\s*=\s*"npm run migrate"/);
 
   const railwayJson = JSON.parse(await fs.readFile(path.join(rootDir, 'railway.json'), 'utf8'));

@@ -1,5 +1,5 @@
 app = "nexora-vpn-api"
-primary_region = "dxb"
+primary_region = "sin"
 
 [build]
   dockerfile = "Dockerfile"
